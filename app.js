@@ -5,8 +5,8 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
 // ---- SUPABASE CONFIG ----
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_URL = 'https://uoikdkfgwrhtdgbwuvyy.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_mtdnERcp4a0-2jXdPRgSbQ_yZhJw9As';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ---- DUMMY DATA (fallback) ----
