@@ -7,1332 +7,816 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ---- SUPABASE CONFIG ----
 const SUPABASE_URL = 'https://uoikdkfgwrhtdgbwuvyy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_mtdnERcp4a0-2jXdPRgSbQ_yZhJw9As';
-// Init aman: jika gagal, admin tetap jalan mode lokal
-let sb = null;
+// Init aman: jika CDN gagal / credential salah, website tetap jalan dengan data dummy
+let supabase = null;
 try {
   if (window.supabase && SUPABASE_URL.includes('.supabase.co') && !SUPABASE_URL.includes('YOUR_PROJECT')) {
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   }
-} catch(e) { console.warn('Supabase tidak terhubung:', e); }
-// Fallback dummy client agar pemanggilan sb.from(...) tidak crash saat offline
-if (!sb) {
-  const fail = async () => { throw new Error('Supabase belum dikonfigurasi'); };
-  const chain = { select: () => chain, insert: () => chain, update: () => chain, delete: () => chain, eq: () => chain, order: () => chain, then: (res, rej) => fail().then(res, rej) };
-  sb = { from: () => chain };
-}
+} catch (e) { console.warn('Supabase tidak terhubung, pakai data dummy:', e); }
 
-// ---- AUTH ----
-const ADMIN_USER = 'admin@autocar.id';
-const ADMIN_PASS = 'autocar2025!';
+// ---- DUMMY DATA (fallback) ----
+const DUMMY_BRANDS = [
+  { id: 1, name: 'Geely', country: 'China', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Geely_logo.svg/512px-Geely_logo.svg.png', is_new: false },
+  { id: 2, name: 'BYD', country: 'China', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/BYD_auto_logo.svg/512px-BYD_auto_logo.svg.png', is_new: true },
+];
+const DUMMY_MODELS = [
+  { id: 1, brand_id: 1, brand_name: 'Geely', name: 'Geely Emgrand', type: 'Sedan', fuel: 'Gasoline', engine: '1.5L Turbo', power: '177 HP', range: null, price: 'Rp 249 Juta', image: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80', description: 'Sedan modern dengan teknologi terkini, kenyamanan premium dan efisiensi bahan bakar terbaik di kelasnya.', is_new: false, is_featured: true },
+  { id: 2, brand_id: 1, brand_name: 'Geely', name: 'Geely Coolray', type: 'SUV', fuel: 'Gasoline', engine: '1.5L Turbo', power: '177 HP', range: null, price: 'Rp 289 Juta', image: 'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', description: 'SUV compact sporty dengan desain futuristik, cocok untuk gaya hidup urban aktif Anda.', is_new: true, is_featured: true },
+  { id: 3, brand_id: 2, brand_name: 'BYD', name: 'BYD Atto 3', type: 'SUV EV', fuel: 'Electric', engine: 'Electric', power: '204 HP', range: '480 km', price: 'Rp 489 Juta', image: 'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', description: 'SUV listrik revolusioner dengan jangkauan 480 km per pengisian, teknologi baterai blade terdepan.', is_new: true, is_featured: true },
+  { id: 4, brand_id: 2, brand_name: 'BYD', name: 'BYD Dolphin', type: 'Hatchback EV', fuel: 'Electric', engine: 'Electric', power: '95 HP', range: '427 km', price: 'Rp 379 Juta', image: 'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', description: 'Hatchback listrik lincah dan efisien, pilihan tepat untuk mobilitas perkotaan yang ramah lingkungan.', is_new: false, is_featured: false },
+  { id: 5, brand_id: 2, brand_name: 'BYD', name: 'BYD Seal', type: 'Sedan EV', fuel: 'Electric', engine: 'Electric', power: '313 HP', range: '570 km', price: 'Rp 629 Juta', image: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=80', description: 'Sedan premium bertenaga tinggi dengan performa luar biasa dan teknologi ultra-modern.', is_new: true, is_featured: false },
+  { id: 6, brand_id: 1, brand_name: 'Geely', name: 'Geely Okavango', type: 'MPV', fuel: 'Gasoline', engine: '1.8L Turbo', power: '190 HP', range: null, price: 'Rp 399 Juta', image: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80', description: 'MPV premium 7 penumpang dengan kenyamanan setara premium, teknologi keselamatan lengkap.', is_new: false, is_featured: false },
+];
+const DUMMY_ARTICLES = [
+  { id: 1, title: 'Geely Coolray 2025: Revolusi SUV Compact untuk Generasi Muda Indonesia', category: 'Review', category_color: '#3B82F6', excerpt: 'Geely Coolray hadir dengan pembaruan signifikan untuk 2025. Desain lebih aerodinamis, interior lebih mewah, dan fitur keselamatan yang lebih lengkap dari sebelumnya.', image: 'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', date: '28 Mei 2025', read_time: '5 menit baca', content: '<h1>Geely Coolray 2025: Revolusi SUV Compact</h1><img src="https://images.unsplash.com/photo-1493238792000-8113da705763?w=800&q=80" /><p>Geely Coolray 2025 hadir dengan pembaruan menyeluruh yang menjadikannya salah satu SUV compact terbaik di segmennya. Dengan desain yang lebih agresif dan aerodinamis, Coolray mampu menarik perhatian di jalanan Indonesia.</p><h2>Performa & Mesin</h2><p>Ditenagai mesin 1.5L Turbo yang menghasilkan 177 HP, Coolray mampu akselerasi 0-100 km/h dalam 8.5 detik. Transmisi 7-speed DCT memberikan perpindahan gigi yang halus dan responsif.</p><h2>Fitur Keselamatan</h2><p>Geely melengkapi Coolray dengan sistem ADAS (Advanced Driver Assistance System) terlengkap di kelasnya, termasuk Lane Keeping Assist, Automatic Emergency Braking, dan Blind Spot Detection.</p><p>Bagi Anda yang tertarik, hubungi kami melalui WhatsApp untuk test drive!</p>' },
+  { id: 2, title: 'BYD vs Kendaraan Konvensional: Mana yang Lebih Hemat di Indonesia?', category: 'Perbandingan', category_color: '#10B981', excerpt: 'Analisis mendalam biaya kepemilikan mobil listrik BYD dibandingkan kendaraan bermesin konvensional dalam jangka 5 tahun di Indonesia.', image: 'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', date: '22 Mei 2025', read_time: '8 menit baca', content: '<h1>BYD vs Konvensional: Analisis Biaya</h1><p>Artikel lengkap tentang perbandingan biaya kepemilikan...</p>' },
+  { id: 3, title: 'Panduan Lengkap: Proses Beli Mobil Baru di AutoCar Indonesia', category: 'Panduan', category_color: '#F59E0B', excerpt: 'Langkah demi langkah cara membeli mobil baru di AutoCar Indonesia — dari konsultasi hingga serah terima kunci. Prosesnya mudah dan transparan!', image: 'https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=600&q=80', date: '15 Mei 2025', read_time: '4 menit baca', content: '<h1>Panduan Beli Mobil di AutoCar</h1><p>Panduan lengkap proses pembelian...</p>' },
+  { id: 4, title: 'BYD Seal 2025: Sedan Listrik Premium yang Menantang Tesla di Indonesia', category: 'Review', category_color: '#3B82F6', excerpt: 'BYD Seal dengan jangkauan 570 km dan performa 313 HP hadir sebagai alternatif premium untuk sedan listrik di pasar Indonesia.', image: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=80', date: '8 Mei 2025', read_time: '6 menit baca', content: '<h1>BYD Seal: Sedan Listrik Premium</h1><p>Review lengkap BYD Seal...</p>' },
+  { id: 5, title: '7 Alasan Kenapa Mobil Listrik Adalah Masa Depan Transportasi Indonesia', category: 'Opini', category_color: '#8B5CF6', excerpt: 'Dari efisiensi biaya, ramah lingkungan, hingga infrastruktur yang terus berkembang — inilah mengapa Anda harus mulai mempertimbangkan kendaraan listrik.', image: 'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', date: '1 Mei 2025', read_time: '7 menit baca', content: '<h1>Masa Depan Kendaraan Listrik</h1><p>Artikel opini tentang kendaraan listrik...</p>' },
+  { id: 6, title: 'Geely Okavango 2025: MPV Premium dengan Harga Terjangkau untuk Keluarga Indonesia', category: 'Review', category_color: '#3B82F6', excerpt: 'Geely Okavango menawarkan kenyamanan setara premium dengan harga yang masih terjangkau — pilihan MPV terbaik untuk keluarga besar.', image: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80', date: '25 Apr 2025', read_time: '5 menit baca', content: '<h1>Geely Okavango 2025 Review</h1><p>Review lengkap Geely Okavango...</p>' },
+];
+const DUMMY_GALLERY = [
+  { id:1, url:'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80', label:'Geely Emgrand' },
+  { id:2, url:'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', label:'Geely Coolray' },
+  { id:3, url:'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', label:'BYD Atto 3' },
+  { id:4, url:'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', label:'BYD Dolphin' },
+  { id:5, url:'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=80', label:'BYD Seal' },
+  { id:6, url:'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80', label:'Geely Okavango' },
+];
+const TESTIMONIALS = [
+  { name: 'Budi Santoso', car: 'BYD Atto 3', text: 'Pengalaman beli mobil di AutoCar sangat menyenangkan! Tim sangat profesional dan membantu dari awal hingga akhir. BYD Atto 3 saya sudah 6 bulan, sangat puas!', initials: 'BS', stars: 5 },
+  { name: 'Dewi Rahayu', car: 'Geely Coolray', text: 'Proses pengajuan kredit sangat cepat dan mudah. Tidak perlu repot keliling banyak dealer. AutoCar memang one stop shopping yang sesungguhnya!', initials: 'DR', stars: 5 },
+  { name: 'Ahmad Fauzi', car: 'BYD Dolphin', text: 'Test drive langsung ke rumah, prosesnya sangat nyaman. BYD Dolphin pilihan tepat untuk sehari-hari. Hemat banget dibanding BBM!', initials: 'AF', stars: 5 },
+  { name: 'Sari Indrawati', car: 'Geely Okavango', text: 'Sudah survey ke banyak dealer, tapi AutoCar yang paling transparan soal harga dan proses. Geely Okavango untuk keluarga sangat worth it!', initials: 'SI', stars: 5 },
+];
+const WHY_US = [
+  { icon: '🏆', title: 'Multi-Brand Resmi', text: 'Kami adalah dealer resmi berbagai brand ternama dunia. Satu tempat untuk semua pilihan mobil impian Anda.' },
+  { icon: '💳', title: 'Kredit Mudah', text: 'Proses KPM mudah, cepat dan bunga kompetitif. DP fleksibel, tenor hingga 7 tahun dengan berbagai bank mitra.' },
+  { icon: '🚗', title: 'Test Drive ke Rumah', text: 'Layanan test drive langsung ke lokasi Anda. Rasakan sensasi berkendara tanpa harus datang ke showroom.' },
+  { icon: '🔧', title: 'Servis & After Sales', text: 'Bengkel bergaransi resmi, spare parts original, dan tim teknisi bersertifikat untuk merawat kendaraan Anda.' },
+  { icon: '📱', title: 'Konsultasi 24/7', text: 'Tim konsultan kami siap membantu kapan saja via WhatsApp, telepon, atau kunjungan langsung ke showroom.' },
+  { icon: '📋', title: 'Transparansi Harga', text: 'Tidak ada biaya tersembunyi. Harga all-in transparan dengan rincian lengkap sebelum Anda memutuskan.' },
+];
 
-// ---- TOAST MANAGER ----
-let _toastSet = null;
-const toast = {
-  success: (msg) => _toastSet && _toastSet(p => [...p, {id:Date.now(),msg,type:'success'}]),
-  error: (msg) => _toastSet && _toastSet(p => [...p, {id:Date.now(),msg,type:'error'}]),
-  warning: (msg) => _toastSet && _toastSet(p => [...p, {id:Date.now(),msg,type:'warning'}]),
-};
-function ToastContainer() {
-  const [toasts, setToasts] = useState([]);
-  _toastSet = setToasts;
-  useEffect(() => {
-    if (!toasts.length) return;
-    const t = setTimeout(() => setToasts(p => p.slice(1)), 3500);
-    return () => clearTimeout(t);
-  }, [toasts]);
-  return (
-    <div className="toasts">
-      {toasts.map(t => (
-        <div key={t.id} className={`toast-item toast-${t.type}`}>
-          <span>{t.type==='success'?'✅':t.type==='error'?'❌':'⚠️'}</span>
-          <span>{t.msg}</span>
-          <span className="toast-close" onClick={() => setToasts(p => p.filter(x => x.id !== t.id))}>✕</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---- DUMMY DATA ----
-const INIT_BRANDS = [
-  { id: 1, name: 'Geely', country: 'China', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Geely_logo.svg/512px-Geely_logo.svg.png', is_new: false, status: 'active', model_count: 4 },
-  { id: 2, name: 'BYD', country: 'China', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/BYD_auto_logo.svg/512px-BYD_auto_logo.svg.png', is_new: true, status: 'active', model_count: 5 },
-];
-const INIT_MODELS = [
-  { id: 1, brand_id: 1, brand_name: 'Geely', name: 'Geely Emgrand', type: 'Sedan', fuel: 'Gasoline', engine: '1.5L Turbo', power: '177 HP', range: '', price: 'Rp 249 Juta', image: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80', description: 'Sedan modern dengan teknologi terkini.', is_new: false, is_featured: true, status: 'active' },
-  { id: 2, brand_id: 1, brand_name: 'Geely', name: 'Geely Coolray', type: 'SUV', fuel: 'Gasoline', engine: '1.5L Turbo', power: '177 HP', range: '', price: 'Rp 289 Juta', image: 'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', description: 'SUV compact sporty dengan desain futuristik.', is_new: true, is_featured: true, status: 'active' },
-  { id: 3, brand_id: 2, brand_name: 'BYD', name: 'BYD Atto 3', type: 'SUV EV', fuel: 'Electric', engine: 'Electric', power: '204 HP', range: '480 km', price: 'Rp 489 Juta', image: 'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', description: 'SUV listrik dengan jangkauan 480 km.', is_new: true, is_featured: true, status: 'active' },
-  { id: 4, brand_id: 2, brand_name: 'BYD', name: 'BYD Dolphin', type: 'Hatchback EV', fuel: 'Electric', engine: 'Electric', power: '95 HP', range: '427 km', price: 'Rp 379 Juta', image: 'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', description: 'Hatchback listrik lincah dan efisien.', is_new: false, is_featured: false, status: 'active' },
-];
-const INIT_ARTICLES = [
-  { id: 1, title: 'Geely Coolray 2025: Revolusi SUV Compact', category: 'Review', category_color: '#3B82F6', excerpt: 'Geely Coolray hadir dengan pembaruan signifikan untuk 2025.', image: 'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', date: '28 Mei 2025', read_time: '5 menit baca', status: 'published', content: '<h1>Geely Coolray 2025</h1><p>Review lengkap Geely Coolray...</p>' },
-  { id: 2, title: 'BYD vs Kendaraan Konvensional: Mana Lebih Hemat?', category: 'Perbandingan', category_color: '#10B981', excerpt: 'Analisis biaya kepemilikan mobil listrik BYD vs konvensional.', image: 'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', date: '22 Mei 2025', read_time: '8 menit baca', status: 'published', content: '<h1>BYD vs Konvensional</h1><p>Analisis biaya...</p>' },
-];
+// ---- HELPER: WhatsApp Link ----
+const WA_NUMBER = '6287710208822';
+const waLink = (msg) => `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
 
 // ==============================
-// LOGIN PAGE
+// COMPONENTS
 // ==============================
-function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [pass, setPass] = useState('');
-  const [err, setErr] = useState('');
-  const [loading, setLoading] = useState(false);
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true); setErr('');
-    await new Promise(r => setTimeout(r, 800));
-    if (email === ADMIN_USER && pass === ADMIN_PASS) {
-      localStorage.setItem('ac_admin', '1');
-      onLogin();
-    } else { setErr('Email atau password salah.'); }
-    setLoading(false);
-  };
+
+// --- LOADING ---
+function LoadingScreen({ visible }) {
+  if (!visible) return null;
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-logo">
-          <div className="login-logo-icon">AC</div>
-          <h1>AutoCar Admin</h1>
-          <p>Panel manajemen konten website</p>
-        </div>
-        {err && <div className="login-error">{err}</div>}
-        <form className="login-form" onSubmit={handleLogin}>
-          <div className="form-group" style={{marginBottom:0}}>
-            <label className="form-label">Email Admin</label>
-            <input className="form-control" type="email" placeholder="admin@autocar.id" value={email} onChange={e => setEmail(e.target.value)} required />
-          </div>
-          <div className="form-group" style={{marginBottom:0}}>
-            <label className="form-label">Password</label>
-            <input className="form-control" type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)} required />
-          </div>
-          <button className="login-btn" type="submit" disabled={loading}>
-            {loading ? 'Memverifikasi...' : '🔐 Masuk ke Admin Panel'}
-          </button>
-        </form>
-        <p style={{textAlign:'center',fontSize:'0.78rem',color:'#94A3B8',marginTop:16}}>
-          Demo: admin@autocar.id / autocar2025!
-        </p>
+    <div className="loading-screen">
+      <div className="nav-logo">
+        <div className="nav-logo-icon">AC</div>
+        <span className="text-gradient">AutoCar</span>
       </div>
+      <div className="loading-bar"><div className="loading-progress"></div></div>
+      <p style={{fontSize:'0.85rem',color:'#9CA3AF'}}>Memuat konten...</p>
     </div>
   );
 }
 
-// ==============================
-// SIDEBAR
-// ==============================
-function Sidebar({ active, setActive, onLogout }) {
-  const nav = [
-    { group: 'Main', items: [
-      { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    ]},
-    { group: 'Konten', items: [
-      { id: 'brands', icon: '🏷️', label: 'Brand' },
-      { id: 'models', icon: '🚗', label: 'Model Mobil' },
-      { id: 'articles', icon: '📝', label: 'Artikel / Blog' },
-    ]},
-    { group: 'Media', items: [
-      { id: 'media', icon: '🖼️', label: 'Galeri Foto' },
-    ]},
-    { group: 'Website', items: [
-      { id: 'htmleditor', icon: '💻', label: 'HTML Editor' },
-    ]},
-    { group: 'Pengaturan', items: [
-      { id: 'settings', icon: '⚙️', label: 'Pengaturan' },
-    ]},
+// --- NAVBAR ---
+function Navbar({ onNavClick, activePage }) {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    const h = () => setScrolled(window.scrollY > 10);
+    window.addEventListener('scroll', h);
+    return () => window.removeEventListener('scroll', h);
+  }, []);
+  const navItems = [
+    { id: 'home', label: 'Beranda' },
+    { id: 'brands', label: 'Brand' },
+    { id: 'models', label: 'Model' },
+    { id: 'gallery', label: 'Galeri' },
+    { id: 'blog', label: 'Blog' },
+    { id: 'about', label: 'Tentang' },
+  ];
+  const handleNav = (id) => { onNavClick(id); setMobileOpen(false); };
+  return (
+    <>
+      <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
+        <div className="container">
+          <div className="nav-logo" style={{cursor:'pointer'}} onClick={() => handleNav('home')}>
+            <div className="nav-logo-icon">AC</div>
+            <span><span className="text-gradient">AutoCar</span></span>
+          </div>
+          <div className="nav-links">
+            {navItems.map(n => (
+              <span key={n.id} className={`nav-link ${activePage === n.id ? 'active' : ''}`} onClick={() => handleNav(n.id)}>{n.label}</span>
+            ))}
+          </div>
+          <div className="nav-actions">
+            <a href={waLink('Halo AutoCar, saya ingin konsultasi pembelian mobil.')} target="_blank" className="nav-wa">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.998 0C5.374 0 0 5.373 0 11.997c0 2.116.554 4.101 1.524 5.83L.07 23.404a.75.75 0 00.921.921l5.583-1.461A11.944 11.944 0 0012 24c6.624 0 12-5.373 12-11.997C24 5.373 18.624 0 11.998 0zm0 21.999c-1.925 0-3.763-.516-5.345-1.415l-.38-.226-3.96 1.035 1.052-3.842-.248-.395C1.99 15.775 1.5 13.943 1.5 11.997 1.5 6.204 6.207 1.5 11.998 1.5c5.79 0 10.5 4.704 10.5 10.497 0 5.793-4.71 10.502-10.5 10.502z"/></svg>
+              WhatsApp
+            </a>
+            <div className="hamburger" onClick={() => setMobileOpen(!mobileOpen)}>
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </nav>
+      <div className={`mobile-nav ${mobileOpen ? 'open' : ''}`}>
+        {navItems.map(n => (
+          <span key={n.id} className={`nav-link ${activePage === n.id ? 'active' : ''}`} onClick={() => handleNav(n.id)}>{n.label}</span>
+        ))}
+        <div style={{marginTop:16}}>
+          <a href={waLink('Halo AutoCar, saya ingin konsultasi pembelian mobil.')} target="_blank" className="nav-wa" style={{display:'inline-flex'}}>
+            <svg viewBox="0 0 24 24" fill="currentColor" style={{width:16,height:16}}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.998 0C5.374 0 0 5.373 0 11.997c0 2.116.554 4.101 1.524 5.83L.07 23.404a.75.75 0 00.921.921l5.583-1.461A11.944 11.944 0 0012 24c6.624 0 12-5.373 12-11.997C24 5.373 18.624 0 11.998 0zm0 21.999c-1.925 0-3.763-.516-5.345-1.415l-.38-.226-3.96 1.035 1.052-3.842-.248-.395C1.99 15.775 1.5 13.943 1.5 11.997 1.5 6.204 6.207 1.5 11.998 1.5c5.79 0 10.5 4.704 10.5 10.497 0 5.793-4.71 10.502-10.5 10.502z"/></svg>
+            WhatsApp Kami
+          </a>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// --- HERO ---
+function Hero({ onExplore, featuredModel }) {
+  const m = featuredModel || DUMMY_MODELS[0];
+  return (
+    <section id="home" className="hero">
+      <div className="container">
+        <div className="hero-grid">
+          <div className="hero-content">
+            <div className="hero-eyebrow">Indonesia's #1 Car Marketplace</div>
+            <h1>
+              Temukan Mobil <span className="text-gradient">Impian Anda</span> di Satu Tempat
+            </h1>
+            <p>Geely, BYD, dan brand-brand terbaik dunia tersedia di AutoCar. One stop shopping mobil baru dengan proses mudah, harga transparan, dan layanan terbaik.</p>
+            <div className="hero-actions">
+              <button className="btn btn-primary btn-lg" onClick={() => onExplore('models')}>
+                🚗 Lihat Semua Model
+              </button>
+              <a href={waLink('Halo AutoCar! Saya ingin konsultasi untuk memilih mobil yang sesuai kebutuhan saya.')} target="_blank" className="btn btn-outline btn-lg">
+                💬 Konsultasi Gratis
+              </a>
+            </div>
+            <div className="hero-stats">
+              <div><div className="hero-stat-value">15+</div><div className="hero-stat-label">Model Tersedia</div></div>
+              <div><div className="hero-stat-value">2</div><div className="hero-stat-label">Brand Premium</div></div>
+              <div><div className="hero-stat-value">500+</div><div className="hero-stat-label">Pelanggan Puas</div></div>
+              <div><div className="hero-stat-value">5★</div><div className="hero-stat-label">Rating Layanan</div></div>
+            </div>
+          </div>
+          <div className="hero-visual">
+            <div className="hero-car-card">
+              <div className="hero-floating hero-floating-1">
+                <span className="dot-green"></span> Ready Stock
+              </div>
+              <img src={m.image} alt={m.name} onError={e => e.target.src='https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80'} />
+              <div className="hero-car-info">
+                <div>
+                  <div className="hero-car-brand">{m.brand_name} • {m.type}</div>
+                  <div className="hero-car-model">{m.name}</div>
+                </div>
+                <div className="hero-car-price">
+                  <div className="hero-car-price-label">Mulai dari</div>
+                  <div className="hero-car-price-value">{m.price}</div>
+                </div>
+              </div>
+              <div className="hero-floating hero-floating-2">
+                <span className="dot-blue"></span> Test Drive Tersedia
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// --- TECH STRIP ---
+function TechStrip() {
+  const items = [
+    '⚡ Teknologi EV Terdepan','🛡️ Garansi Resmi Pabrik','🔋 Blade Battery Technology',
+    '🤖 ADAS Smart Safety','🌿 Zero Emission Driving','🏆 Award-Winning Design',
+    '📱 Connected Car System','⚡ Teknologi EV Terdepan','🛡️ Garansi Resmi Pabrik',
+    '🔋 Blade Battery Technology','🤖 ADAS Smart Safety','🌿 Zero Emission Driving',
   ];
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">AC</div>
-          <div>
-            <div>AutoCar</div>
-            <span className="sidebar-tag">Admin Panel v1.0</span>
+    <div className="tech-strip">
+      <div className="tech-strip-inner">
+        {items.map((t, i) => (
+          <div key={i} className="tech-strip-item">
+            <span>{t}</span>
+            <span style={{color:'rgba(255,255,255,0.2)'}}>•</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- BRANDS ---
+function BrandsSection({ brands, onBrandClick }) {
+  const data = brands.length ? brands : DUMMY_BRANDS;
+  return (
+    <section id="brands" className="section brands-section">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-primary mb-4">Brand Pilihan</span>
+          <h2>Brand Mobil Terbaik <span className="text-gradient">Dunia</span></h2>
+          <p>Kami menghadirkan brand-brand ternama dengan reputasi global untuk pilihan terbaik Anda</p>
+        </div>
+        <div className="brands-grid">
+          {data.map(b => (
+            <div key={b.id} className="brand-card" onClick={() => onBrandClick(b)}>
+              {b.is_new && <div className="brand-card-badge"><span className="badge badge-new">NEW</span></div>}
+              <div className="brand-logo-wrap">
+                <img src={b.logo} alt={b.name} onError={e => { e.target.style.display='none'; e.target.parentElement.innerHTML=`<span style="font-size:1.8rem;font-weight:900;color:#0066FF">${b.name.slice(0,2)}</span>`; }} />
+              </div>
+              <div className="brand-name">{b.name}</div>
+              <div className="brand-country">{b.country}</div>
+              <div className="brand-model-count">Lihat Semua Model →</div>
+            </div>
+          ))}
+          <div className="brand-card" style={{borderStyle:'dashed',cursor:'default',background:'transparent'}}>
+            <div className="brand-logo-wrap" style={{background:'transparent'}}>
+              <span style={{fontSize:'2rem'}}>+</span>
+            </div>
+            <div className="brand-name" style={{color:'#9CA3AF'}}>Coming Soon</div>
+            <div className="brand-country">Brand Baru Segera Hadir</div>
           </div>
         </div>
       </div>
-      <nav className="sidebar-nav">
-        {nav.map(g => (
-          <div key={g.group} className="nav-group">
-            <div className="nav-group-title">{g.group}</div>
-            {g.items.map(item => (
-              <div key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => setActive(item.id)}>
-                <div className="nav-icon">{item.icon}</div>
-                <span>{item.label}</span>
+    </section>
+  );
+}
+
+// --- MODELS ---
+function ModelsSection({ models, brands, selectedBrand, onModelClick }) {
+  const [filter, setFilter] = useState('all');
+  const allModels = models.length ? models : DUMMY_MODELS;
+  const brandList = [{ id: 'all', name: 'Semua Brand' }, ...(brands.length ? brands : DUMMY_BRANDS)];
+  const filtered = filter === 'all' ? allModels : allModels.filter(m => m.brand_id == filter || m.brand_name?.toLowerCase() === filter.toLowerCase());
+  const typeFilters = ['all', ...new Set(allModels.map(m => m.fuel === 'Electric' ? 'EV' : 'Gasoline'))];
+  const [typeFilter, setTypeFilter] = useState('all');
+  const displayed = typeFilter === 'all' ? filtered : filtered.filter(m => (typeFilter === 'EV' ? m.fuel === 'Electric' : m.fuel !== 'Electric'));
+
+  return (
+    <section id="models" className="section models-section">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-accent mb-4">Model Pilihan</span>
+          <h2>Pilih Mobil <span className="text-gradient">Sesuai Impian</span></h2>
+          <p>Dari SUV sporty, sedan elegan, hingga EV masa depan — temukan yang sempurna untuk Anda</p>
+        </div>
+        <div className="models-filter">
+          {brandList.map(b => (
+            <button key={b.id} className={`filter-btn ${filter == b.id ? 'active' : ''}`} onClick={() => setFilter(b.id)}>
+              {b.name}
+            </button>
+          ))}
+          <span style={{width:1,background:'#E5E7EB',margin:'0 4px'}}></span>
+          <button className={`filter-btn ${typeFilter === 'all' ? 'active' : ''}`} onClick={() => setTypeFilter('all')}>⚡ Semua</button>
+          <button className={`filter-btn ${typeFilter === 'EV' ? 'active' : ''}`} onClick={() => setTypeFilter('EV')}>⚡ Electric</button>
+          <button className={`filter-btn ${typeFilter === 'Gasoline' ? 'active' : ''}`} onClick={() => setTypeFilter('Gasoline')}>⛽ Bensin</button>
+        </div>
+        {displayed.length === 0 && (
+          <div className="text-center" style={{padding:'48px 0',color:'#9CA3AF'}}>
+            <div style={{fontSize:'3rem',marginBottom:12}}>🚗</div>
+            <p>Tidak ada model yang sesuai filter</p>
+          </div>
+        )}
+        <div className="models-grid">
+          {displayed.map(m => (
+            <CarCard key={m.id} model={m} onClick={() => onModelClick(m)} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// --- CAR CARD ---
+function CarCard({ model: m, onClick }) {
+  const brandLogo = DUMMY_BRANDS.find(b => b.name === m.brand_name)?.logo;
+  return (
+    <div className="car-card" onClick={onClick}>
+      <div className="car-card-img">
+        <img src={m.image} alt={m.name} onError={e => e.target.src='https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80'} />
+        <div className="car-card-overlay"></div>
+        <div className="car-card-type">
+          <span className="badge" style={{background: m.fuel==='Electric' ? 'rgba(0,212,170,0.9)' : 'rgba(0,102,255,0.9)', color:'white', fontSize:'0.7rem'}}>
+            {m.fuel === 'Electric' ? '⚡ Electric' : `⛽ ${m.type}`}
+          </span>
+        </div>
+        {brandLogo && (
+          <div className="car-card-brand-logo">
+            <img src={brandLogo} alt={m.brand_name} onError={e => e.target.style.display='none'} />
+          </div>
+        )}
+        {m.is_new && <div style={{position:'absolute',top:12,right:12}}><span className="badge badge-new" style={{fontSize:'0.65rem'}}>NEW</span></div>}
+      </div>
+      <div className="car-card-body">
+        <div className="car-card-brand">{m.brand_name}</div>
+        <div className="car-card-name">{m.name}</div>
+        <div className="car-card-desc">{m.description}</div>
+        <div className="car-card-specs">
+          <div className="car-spec"><div className="car-spec-value">{m.engine}</div><div className="car-spec-label">Mesin</div></div>
+          <div className="car-spec"><div className="car-spec-value">{m.power}</div><div className="car-spec-label">Tenaga</div></div>
+          <div className="car-spec"><div className="car-spec-value">{m.range || m.type}</div><div className="car-spec-label">{m.range ? 'Jangkauan' : 'Tipe'}</div></div>
+        </div>
+        <div className="car-card-footer">
+          <div className="car-price"><div className="car-price-label">Mulai dari</div><div className="car-price-value">{m.price}</div></div>
+          <button className="car-wa-btn" onClick={e => { e.stopPropagation(); window.open(waLink(`Halo AutoCar! Saya tertarik dengan ${m.name} seharga ${m.price}. Bisa minta info lebih lanjut?`), '_blank'); }}>
+            <svg viewBox="0 0 24 24" fill="currentColor" style={{width:14,height:14}}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.998 0C5.374 0 0 5.373 0 11.997c0 2.116.554 4.101 1.524 5.83L.07 23.404a.75.75 0 00.921.921l5.583-1.461A11.944 11.944 0 0012 24c6.624 0 12-5.373 12-11.997C24 5.373 18.624 0 11.998 0zm0 21.999c-1.925 0-3.763-.516-5.345-1.415l-.38-.226-3.96 1.035 1.052-3.842-.248-.395C1.99 15.775 1.5 13.943 1.5 11.997 1.5 6.204 6.207 1.5 11.998 1.5c5.79 0 10.5 4.704 10.5 10.497 0 5.793-4.71 10.502-10.5 10.502z"/></svg>
+            Tanya WA
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- CAROUSEL ---
+function CarouselSection({ models }) {
+  const [idx, setIdx] = useState(0);
+  const data = (models.length ? models : DUMMY_MODELS).slice(0, 6);
+  const prev = () => setIdx(i => (i - 1 + data.length) % data.length);
+  const next = () => setIdx(i => (i + 1) % data.length);
+  useEffect(() => { const t = setInterval(next, 5000); return () => clearInterval(t); }, [data.length]);
+  return (
+    <section className="carousel-section">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge" style={{background:'rgba(0,212,170,0.15)',color:'#00D4AA',marginBottom:16}}>Featured Models</span>
+          <h2>Model <span style={{color:'#00D4AA'}}>Unggulan</span> Pilihan</h2>
+          <p style={{color:'rgba(255,255,255,0.6)'}}>Temukan model-model terpopuler dengan teknologi terdepan</p>
+        </div>
+        <div className="carousel-wrapper" style={{overflow:'hidden'}}>
+          <div className="carousel-track" style={{transform: `translateX(calc(-${idx * (440 + 24)}px))`}}>
+            {data.map((m, i) => (
+              <div key={m.id} className="carousel-slide">
+                <img src={m.image} alt={m.name} onError={e => e.target.src='https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80'} style={{width:'100%',height:280,objectFit:'cover'}} />
+                <div className="carousel-slide-body">
+                  <div className="carousel-slide-brand">{m.brand_name} · {m.type}</div>
+                  <div className="carousel-slide-title">{m.name}</div>
+                  <div className="carousel-slide-text">{m.description}</div>
+                  <div style={{marginTop:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontFamily:'var(--font-display)',fontSize:'1.1rem',fontWeight:800,color:'#00D4AA'}}>{m.price}</span>
+                    <a href={waLink(`Halo! Saya tertarik dengan ${m.name}. Bisa info lebih lanjut?`)} target="_blank" style={{background:'#25D366',color:'white',padding:'8px 16px',borderRadius:8,fontSize:'0.8rem',fontWeight:600,textDecoration:'none'}}>Tanya WA</a>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-        ))}
-      </nav>
-      <div className="sidebar-footer">
-        <div className="sidebar-user">
-          <div className="sidebar-user-avatar">AD</div>
-          <div>
-            <div className="sidebar-user-name">Admin</div>
-            <div className="sidebar-user-role">Super Administrator</div>
+        </div>
+        <div className="carousel-nav">
+          <button className="carousel-btn" onClick={prev}>←</button>
+          <div className="carousel-dots">
+            {data.map((_, i) => <div key={i} className={`carousel-dot ${i === idx ? 'active' : ''}`} onClick={() => setIdx(i)}></div>)}
           </div>
-          <button className="sidebar-logout" onClick={onLogout}>Keluar</button>
+          <button className="carousel-btn" onClick={next}>→</button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-// ==============================
-// TOPBAR
-// ==============================
-function Topbar({ page }) {
-  const titles = { dashboard:'Dashboard', brands:'Manajemen Brand', models:'Manajemen Model Mobil', articles:'Artikel & Blog', media:'Galeri Foto', htmleditor:'HTML Editor', settings:'Pengaturan' };
+// --- BLOG ---
+function BlogSection({ articles, onArticleClick }) {
+  const data = articles.length ? articles : DUMMY_ARTICLES;
   return (
-    <div className="topbar">
-      <div>
-        <div className="topbar-title">{titles[page] || page}</div>
-        <div className="topbar-breadcrumb">AutoCar Admin → {titles[page]}</div>
-      </div>
-      <div className="topbar-actions">
-        <a href="index.html" target="_blank" className="btn btn-outline btn-sm">🔗 Lihat Website</a>
-        <div className="topbar-notif" style={{position:'relative',cursor:'pointer',fontSize:'1.2rem'}}>
-          🔔 <div className="notif-dot"></div>
+    <section id="blog" className="section blog-section">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-primary mb-4">Blog & Artikel</span>
+          <h2>Informasi & Tips <span className="text-gradient">Terkini</span></h2>
+          <p>Dapatkan informasi terbaru seputar dunia otomotif, review, dan panduan membeli mobil</p>
+        </div>
+        <div className="blog-grid">
+          {data.map(a => (
+            <div key={a.id} className="blog-card" onClick={() => onArticleClick(a)}>
+              <div className="blog-card-img">
+                <img src={a.image} alt={a.title} onError={e => e.target.src='https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?w=600&q=80'} />
+              </div>
+              <div className="blog-card-body">
+                <div className="blog-meta">
+                  <span className="blog-tag" style={{background:`${a.category_color}20`,color:a.category_color}}>{a.category}</span>
+                  <span className="blog-date">{a.date}</span>
+                </div>
+                <div className="blog-title">{a.title}</div>
+                <div className="blog-excerpt">{a.excerpt}</div>
+              </div>
+              <div className="blog-footer">
+                <span style={{fontSize:'0.78rem',color:'#9CA3AF'}}>📖 {a.read_time}</span>
+                <span className="blog-read-more">Baca Selengkapnya →</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-// ==============================
-// DASHBOARD
-// ==============================
-function Dashboard({ brands, models, articles, setPage }) {
-  const stats = [
-    { label: 'Total Brand', value: brands.length, icon: '🏷️', color: '#EEF4FF', change: '+1 bulan ini', up: true },
-    { label: 'Total Model', value: models.length, icon: '🚗', color: '#F0FDF4', change: '+2 bulan ini', up: true },
-    { label: 'Artikel', value: articles.length, icon: '📝', color: '#FFFBEB', change: '+3 bulan ini', up: true },
-    { label: 'Pengunjung/Hari', value: '1,234', icon: '👥', color: '#FDF4FF', change: '+12% minggu ini', up: true },
-  ];
-  const activities = [
-    { text: 'Brand BYD ditandai "NEW"', time: '2 jam lalu', color: '#3B82F6' },
-    { text: 'Artikel baru ditambahkan', time: '4 jam lalu', color: '#10B981' },
-    { text: 'Model Geely Coolray diupdate', time: '1 hari lalu', color: '#F59E0B' },
-    { text: 'Foto galeri diupload (5 foto)', time: '2 hari lalu', color: '#8B5CF6' },
-    { text: 'Pengaturan SEO diperbarui', time: '3 hari lalu', color: '#EC4899' },
-  ];
+// --- BRAND PAGE (Halaman khusus per-brand) ---
+function BrandPage({ brand, models, onBack, onModelClick }) {
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [brand]);
+  const brandModels = models.filter(m => m.brand_id == brand.id || m.brand_name === brand.name);
   return (
-    <div>
-      <div className="stats-grid">
-        {stats.map((s,i) => (
-          <div key={i} className="stat-card">
-            <div className="stat-icon" style={{background:s.color}}>{s.icon}</div>
+    <div style={{paddingTop:'var(--nav-h)'}}>
+      {/* Brand Hero Header */}
+      <section style={{background:'linear-gradient(135deg, #0A0E1A 0%, #1E2235 100%)',padding:'64px 0',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:'-30%',right:'-5%',width:500,height:500,background:'radial-gradient(circle, rgba(0,102,255,0.15) 0%, transparent 70%)',borderRadius:'50%'}}></div>
+        <div className="container" style={{position:'relative',zIndex:1}}>
+          <button onClick={onBack} className="btn btn-ghost btn-sm" style={{marginBottom:28}}>← Kembali ke Beranda</button>
+          <div style={{display:'flex',alignItems:'center',gap:28,flexWrap:'wrap'}}>
+            <div style={{width:110,height:110,background:'white',borderRadius:20,display:'flex',alignItems:'center',justifyContent:'center',padding:16,flexShrink:0,boxShadow:'0 10px 40px rgba(0,0,0,0.3)'}}>
+              <img src={brand.logo} alt={brand.name} style={{width:'100%',height:'100%',objectFit:'contain'}} onError={e => { e.target.outerHTML=`<span style="font-size:2.4rem;font-weight:900;color:#0066FF">${brand.name.slice(0,2)}</span>`; }} />
+            </div>
             <div>
-              <div className="stat-label">{s.label}</div>
-              <div className="stat-value">{s.value}</div>
-              <div className={`stat-change ${s.up ? 'up' : 'down'}`}>{s.up ? '↑' : '↓'} {s.change}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="quick-actions">
-        {[
-          { icon:'🏷️', label:'Tambah Brand', page:'brands' },
-          { icon:'🚗', label:'Tambah Model', page:'models' },
-          { icon:'📝', label:'Tulis Artikel', page:'articles' },
-          { icon:'🖼️', label:'Upload Foto', page:'media' },
-        ].map((q,i) => (
-          <div key={i} className="quick-action-card" onClick={() => setPage(q.page)}>
-            <div className="qa-icon">{q.icon}</div>
-            <div className="qa-label">{q.label}</div>
-          </div>
-        ))}
-      </div>
-      <div className="recent-grid">
-        <div className="card">
-          <div className="card-header"><div className="card-title">Aktivitas Terbaru</div></div>
-          <div className="card-body" style={{padding:'0 24px'}}>
-            <div className="activity-list">
-              {activities.map((a,i) => (
-                <div key={i} className="activity-item">
-                  <div className="activity-dot" style={{background:a.color}}></div>
-                  <div className="activity-text">{a.text}</div>
-                  <div className="activity-time">{a.time}</div>
-                </div>
-              ))}
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+                <h1 style={{color:'white',fontSize:'clamp(2rem,4vw,3rem)'}}>{brand.name}</h1>
+                {brand.is_new && <span className="badge badge-new">NEW</span>}
+              </div>
+              <p style={{color:'rgba(255,255,255,0.6)',fontSize:'1rem'}}>🌍 {brand.country} · {brandModels.length} Model Tersedia di Indonesia</p>
             </div>
           </div>
         </div>
-        <div className="card">
-          <div className="card-header"><div className="card-title">Info Website</div></div>
-          <div className="card-body">
-            <div style={{display:'flex',flexDirection:'column',gap:14}}>
-              {[
-                { label: 'Status Website', value: '✅ Online', color: '#22C55E' },
-                { label: 'Total Halaman', value: '8 Halaman' },
-                { label: 'Database', value: '🟢 Supabase' },
-                { label: 'Kontak WA', value: '0877-1020-8822' },
-                { label: 'Terakhir Update', value: 'Hari ini' },
-              ].map((r,i) => (
-                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingBottom:12,borderBottom:i<4?'1px solid #F1F5F9':'none'}}>
-                  <span style={{fontSize:'0.82rem',color:'#64748B'}}>{r.label}</span>
-                  <span style={{fontSize:'0.82rem',fontWeight:600,color:r.color||'#0F172A'}}>{r.value}</span>
-                </div>
-              ))}
+      </section>
+
+      {/* Brand Models */}
+      <section className="section" style={{background:'var(--gray-6)'}}>
+        <div className="container">
+          <div className="section-header text-center">
+            <span className="badge badge-primary mb-4">Semua Model {brand.name}</span>
+            <h2>Lineup <span className="text-gradient">{brand.name}</span> Indonesia</h2>
+            <p>Pilih model {brand.name} yang sesuai dengan kebutuhan dan gaya hidup Anda</p>
+          </div>
+          {brandModels.length === 0 ? (
+            <div className="text-center" style={{padding:'48px 0',color:'#9CA3AF'}}>
+              <div style={{fontSize:'3rem',marginBottom:12}}>🚗</div>
+              <p>Model {brand.name} segera hadir. Hubungi kami untuk info lebih lanjut!</p>
+              <a href={waLink(`Halo AutoCar! Saya ingin info model ${brand.name} yang tersedia.`)} target="_blank" className="btn btn-primary" style={{marginTop:16}}>💬 Tanya via WhatsApp</a>
             </div>
+          ) : (
+            <div className="models-grid">
+              {brandModels.map(m => <CarCard key={m.id} model={m} onClick={() => onModelClick(m)} />)}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Brand CTA */}
+      <section className="cta-section">
+        <div className="container">
+          <h2>Tertarik dengan {brand.name}?</h2>
+          <p>Jadwalkan test drive atau konsultasi gratis dengan tim ahli kami sekarang!</p>
+          <div className="cta-actions">
+            <a href={waLink(`Halo AutoCar! Saya tertarik dengan mobil ${brand.name}. Bisa jadwalkan test drive?`)} target="_blank" className="btn btn-white btn-lg">💬 Chat WhatsApp</a>
+            <a href="tel:+6287710208822" className="btn btn-ghost btn-lg">📞 Telepon Kami</a>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-// ==============================
-// IMAGE INPUT COMPONENT
-// ==============================
-function ImageInput({ value, onChange, label, type='car' }) {
-  const [mode, setMode] = useState('url');
-  const [preview, setPreview] = useState(value || '');
-  const handleFile = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { const url = ev.target.result; setPreview(url); onChange(url); };
-    reader.readAsDataURL(f);
-  };
-  const handleUrl = (v) => { setPreview(v); onChange(v); };
+// --- GALLERY SECTION ---
+function GallerySection({ gallery }) {
+  const data = gallery.length ? gallery : DUMMY_GALLERY;
+  const [lightbox, setLightbox] = useState(null);
   return (
-    <div>
-      <div className="img-type-toggle">
-        <button type="button" className={`img-type-btn ${mode==='url'?'active':''}`} onClick={() => setMode('url')}>🔗 URL</button>
-        <button type="button" className={`img-type-btn ${mode==='file'?'active':''}`} onClick={() => setMode('file')}>📁 Upload File</button>
+    <section id="gallery" className="section" style={{background:'white'}}>
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-accent mb-4">Galeri</span>
+          <h2>Galeri <span className="text-gradient">Foto</span></h2>
+          <p>Koleksi foto terbaru unit, showroom, dan momen serah terima pelanggan kami</p>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:20}}>
+          {data.map(g => (
+            <div key={g.id} onClick={() => setLightbox(g)} style={{position:'relative',borderRadius:16,overflow:'hidden',cursor:'pointer',height:220,border:'1px solid var(--border-light)'}}
+              onMouseEnter={e => e.currentTarget.querySelector('img').style.transform='scale(1.06)'}
+              onMouseLeave={e => e.currentTarget.querySelector('img').style.transform='scale(1)'}>
+              <img src={g.url} alt={g.label} style={{width:'100%',height:'100%',objectFit:'cover',transition:'0.5s'}} onError={e => e.target.src='https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?w=600&q=80'} />
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%)'}}></div>
+              <div style={{position:'absolute',bottom:14,left:16,color:'white',fontWeight:600,fontSize:'0.9rem'}}>{g.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
-      {mode === 'url' ? (
-        <input className="form-control" type="url" placeholder="https://example.com/image.jpg" value={value} onChange={e => handleUrl(e.target.value)} />
-      ) : (
-        <input className="form-control" type="file" accept="image/*" onChange={handleFile} />
-      )}
-      {(preview || value) && (
-        <div className="img-preview-wrap">
-          <img src={preview || value} alt="preview" className={type === 'logo' ? 'img-preview-logo' : 'img-preview'} onError={e => e.target.style.display='none'} />
+      {lightbox && (
+        <div className="modal-overlay" onClick={() => setLightbox(null)}>
+          <div style={{maxWidth:880,width:'100%'}} onClick={e => e.stopPropagation()}>
+            <img src={lightbox.url} alt={lightbox.label} style={{width:'100%',borderRadius:16,maxHeight:'80vh',objectFit:'contain'}} />
+            <div style={{textAlign:'center',color:'white',marginTop:12,fontWeight:600}}>{lightbox.label}</div>
+          </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-// ==============================
-// BRANDS PAGE
-// ==============================
-function BrandsPage({ brands, setBrands }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [deleteItem, setDeleteItem] = useState(null);
-  const [search, setSearch] = useState('');
-  const [form, setForm] = useState({ name:'', country:'', logo:'', is_new:false, status:'active' });
-
-  const filtered = brands.filter(b => b.name.toLowerCase().includes(search.toLowerCase()));
-
-  const openAdd = () => { setForm({ name:'', country:'', logo:'', is_new:false, status:'active' }); setEditItem(null); setShowForm(true); };
-  const openEdit = (b) => { setForm({...b}); setEditItem(b); setShowForm(true); };
-
-  const handleSave = async () => {
-    if (!form.name || !form.country) { toast.error('Nama dan negara wajib diisi!'); return; }
-    try {
-      if (editItem) {
-        const { error } = await sb.from('brands').update(form).eq('id', editItem.id);
-        if (error) throw error;
-        setBrands(p => p.map(b => b.id === editItem.id ? {...form, id:editItem.id} : b));
-      } else {
-        const { data, error } = await sb.from('brands').insert([form]).select();
-        if (error) throw error;
-        setBrands(p => [...p, data ? data[0] : {...form, id: Date.now(), model_count:0}]);
-      }
-      toast.success(editItem ? 'Brand berhasil diupdate!' : 'Brand berhasil ditambahkan!');
-      setShowForm(false);
-    } catch(e) {
-      // Offline fallback
-      if (editItem) setBrands(p => p.map(b => b.id === editItem.id ? {...form, id:editItem.id} : b));
-      else setBrands(p => [...p, {...form, id: Date.now(), model_count:0}]);
-      toast.success(editItem ? 'Brand diupdate (lokal)!' : 'Brand ditambahkan (lokal)!');
-      setShowForm(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      await sb.from('brands').delete().eq('id', deleteItem.id);
-    } catch(e) {}
-    setBrands(p => p.filter(b => b.id !== deleteItem.id));
-    toast.success('Brand dihapus!'); setDeleteItem(null);
-  };
-
+// --- WHY US ---
+function WhySection() {
   return (
-    <div>
-      <div className="toolbar">
-        <div className="search-bar">
-          <span>🔍</span>
-          <input placeholder="Cari brand..." value={search} onChange={e => setSearch(e.target.value)} />
+    <section className="section why-section">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge" style={{background:'rgba(0,212,170,0.15)',color:'#00D4AA',marginBottom:16}}>Kenapa AutoCar?</span>
+          <h2>Layanan <span style={{color:'#00D4AA'}}>Terbaik</span> untuk Anda</h2>
+          <p>Kami berkomitmen memberikan pengalaman berbelanja mobil yang mudah, nyaman dan transparan</p>
         </div>
-        <div style={{marginLeft:'auto'}}>
-          <button className="btn btn-primary" onClick={openAdd}>+ Tambah Brand</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Logo</th><th>Nama Brand</th><th>Negara</th><th>Status</th><th>Badge</th><th>Aksi</th>
-            </tr></thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={6}><div className="table-empty"><div className="table-empty-icon">🏷️</div><p>Belum ada brand</p></div></td></tr>
-              )}
-              {filtered.map(b => (
-                <tr key={b.id}>
-                  <td><img src={b.logo} alt={b.name} className="td-logo" onError={e => { e.target.style.display='none'; }} /></td>
-                  <td><strong>{b.name}</strong></td>
-                  <td>{b.country}</td>
-                  <td><span className={`status status-${b.status}`}>{b.status === 'active' ? '● Aktif' : '● Nonaktif'}</span></td>
-                  <td>{b.is_new && <span className="status status-new">✦ NEW</span>}</td>
-                  <td>
-                    <div style={{display:'flex',gap:6}}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(b)}>✏️ Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => setDeleteItem(b)}>🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="why-grid">
+          {WHY_US.map((w, i) => (
+            <div key={i} className="why-card">
+              <div className="why-icon">{w.icon}</div>
+              <div className="why-title">{w.title}</div>
+              <div className="why-text">{w.text}</div>
+            </div>
+          ))}
         </div>
       </div>
-
-      {/* FORM MODAL */}
-      {showForm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h2>{editItem ? '✏️ Edit Brand' : '+ Tambah Brand Baru'}</h2>
-              <button className="close-btn" onClick={() => setShowForm(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-grid">
-                <div className="form-group">
-                  <label className="form-label">Nama Brand <span className="required">*</span></label>
-                  <input className="form-control" placeholder="cth: Toyota" value={form.name} onChange={e => setForm(p => ({...p,name:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Negara Asal <span className="required">*</span></label>
-                  <input className="form-control" placeholder="cth: Japan" value={form.country} onChange={e => setForm(p => ({...p,country:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select className="form-control" value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}>
-                    <option value="active">Aktif</option>
-                    <option value="inactive">Nonaktif</option>
-                  </select>
-                </div>
-                <div className="form-group" style={{display:'flex',alignItems:'center',paddingTop:28}}>
-                  <div className="toggle-wrap">
-                    <label className="toggle">
-                      <input type="checkbox" checked={form.is_new} onChange={e => setForm(p => ({...p,is_new:e.target.checked}))} />
-                      <span className="toggle-slider"></span>
-                    </label>
-                    <span className="toggle-label">Tandai sebagai "NEW"</span>
-                  </div>
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Logo Brand</label>
-                  <div className="form-hint" style={{marginBottom:8}}>Ukuran logo yang disarankan: 200×200px (format PNG transparan). Bisa URL atau upload file.</div>
-                  <ImageInput value={form.logo} onChange={v => setForm(p => ({...p,logo:v}))} type="logo" />
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowForm(false)}>Batal</button>
-              <button className="btn btn-primary" onClick={handleSave}>💾 Simpan Brand</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE CONFIRM */}
-      {deleteItem && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-body">
-              <div className="delete-confirm">
-                <div className="delete-confirm-icon">🗑️</div>
-                <h3>Hapus Brand?</h3>
-                <p>Anda yakin ingin menghapus <strong>{deleteItem.name}</strong>?</p>
-                <p style={{color:'#EF4444',fontSize:'0.8rem'}}>Semua model yang terkait juga akan terpengaruh.</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setDeleteItem(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={handleDelete}>🗑️ Ya, Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
-// ==============================
-// MODELS PAGE
-// ==============================
-function ModelsPage({ models, setModels, brands }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [deleteItem, setDeleteItem] = useState(null);
-  const [search, setSearch] = useState('');
-  const [filterBrand, setFilterBrand] = useState('all');
-  const emptyForm = { brand_id:'', brand_name:'', name:'', type:'', fuel:'Gasoline', engine:'', power:'', range:'', price:'', image:'', description:'', is_new:false, is_featured:false, status:'active' };
-  const [form, setForm] = useState(emptyForm);
-
-  const filtered = models.filter(m =>
-    (filterBrand === 'all' || m.brand_id == filterBrand) &&
-    (m.name.toLowerCase().includes(search.toLowerCase()) || m.brand_name?.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  const openAdd = () => { setForm(emptyForm); setEditItem(null); setShowForm(true); };
-  const openEdit = (m) => { setForm({...m}); setEditItem(m); setShowForm(true); };
-
-  const handleBrandChange = (id) => {
-    const b = brands.find(b => b.id == id);
-    setForm(p => ({...p, brand_id: id, brand_name: b?.name || ''}));
-  };
-
-  const handleSave = async () => {
-    if (!form.name || !form.brand_id) { toast.error('Nama model dan brand wajib diisi!'); return; }
-    try {
-      if (editItem) {
-        await sb.from('models').update(form).eq('id', editItem.id);
-        setModels(p => p.map(m => m.id === editItem.id ? {...form, id:editItem.id} : m));
-      } else {
-        const { data } = await sb.from('models').insert([form]).select();
-        setModels(p => [...p, data ? data[0] : {...form, id: Date.now()}]);
-      }
-      toast.success(editItem ? 'Model berhasil diupdate!' : 'Model berhasil ditambahkan!');
-      setShowForm(false);
-    } catch(e) {
-      if (editItem) setModels(p => p.map(m => m.id === editItem.id ? {...form, id:editItem.id} : m));
-      else setModels(p => [...p, {...form, id: Date.now()}]);
-      toast.success(editItem ? 'Model diupdate (lokal)!' : 'Model ditambahkan (lokal)!');
-      setShowForm(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try { await sb.from('models').delete().eq('id', deleteItem.id); } catch(e) {}
-    setModels(p => p.filter(m => m.id !== deleteItem.id));
-    toast.success('Model dihapus!'); setDeleteItem(null);
-  };
-
+// --- TESTIMONIALS ---
+function TestimonialsSection() {
   return (
-    <div>
-      <div className="toolbar">
-        <div className="search-bar">
-          <span>🔍</span>
-          <input placeholder="Cari model..." value={search} onChange={e => setSearch(e.target.value)} />
+    <section className="section testimonials-section" id="about">
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-accent mb-4">Testimoni</span>
+          <h2>Apa Kata <span className="text-gradient">Pelanggan Kami</span></h2>
+          <p>Kepuasan pelanggan adalah prioritas utama kami dalam setiap transaksi</p>
         </div>
-        <select className="filter-select" value={filterBrand} onChange={e => setFilterBrand(e.target.value)}>
-          <option value="all">Semua Brand</option>
-          {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
-        <div style={{marginLeft:'auto'}}>
-          <button className="btn btn-primary" onClick={openAdd}>+ Tambah Model</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Foto</th><th>Brand</th><th>Nama Model</th><th>Tipe</th><th>Bahan Bakar</th><th>Harga</th><th>Status</th><th>Aksi</th>
-            </tr></thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={8}><div className="table-empty"><div className="table-empty-icon">🚗</div><p>Belum ada model</p></div></td></tr>
-              )}
-              {filtered.map(m => (
-                <tr key={m.id}>
-                  <td><img src={m.image} alt={m.name} className="td-img" onError={e => { e.target.style.opacity=0.3; }} /></td>
-                  <td><span className="type-badge">{m.brand_name}</span></td>
-                  <td><strong>{m.name}</strong>{m.is_new && <span className="status status-new" style={{marginLeft:6}}>NEW</span>}</td>
-                  <td>{m.type}</td>
-                  <td><span className={`type-badge ${m.fuel==='Electric'?'ev-badge':''}`}>{m.fuel==='Electric'?'⚡ EV':'⛽ '+m.fuel}</span></td>
-                  <td><strong style={{color:'#0066FF'}}>{m.price}</strong></td>
-                  <td><span className={`status status-${m.status}`}>{m.status==='active'?'● Aktif':'● Draft'}</span></td>
-                  <td>
-                    <div style={{display:'flex',gap:6}}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>✏️ Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => setDeleteItem(m)}>🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="modal-overlay">
-          <div className="modal modal-lg">
-            <div className="modal-header">
-              <h2>{editItem ? '✏️ Edit Model Mobil' : '+ Tambah Model Baru'}</h2>
-              <button className="close-btn" onClick={() => setShowForm(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-grid">
-                <div className="form-group">
-                  <label className="form-label">Brand <span className="required">*</span></label>
-                  <select className="form-control" value={form.brand_id} onChange={e => handleBrandChange(e.target.value)}>
-                    <option value="">-- Pilih Brand --</option>
-                    {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Nama Model <span className="required">*</span></label>
-                  <input className="form-control" placeholder="cth: BYD Atto 3" value={form.name} onChange={e => setForm(p => ({...p,name:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Tipe Kendaraan</label>
-                  <input className="form-control" placeholder="cth: SUV, Sedan, MPV, Hatchback" value={form.type} onChange={e => setForm(p => ({...p,type:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Bahan Bakar</label>
-                  <select className="form-control" value={form.fuel} onChange={e => setForm(p => ({...p,fuel:e.target.value}))}>
-                    <option value="Gasoline">Gasoline (Bensin)</option>
-                    <option value="Electric">Electric (EV)</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Diesel">Diesel</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Mesin / Motor</label>
-                  <input className="form-control" placeholder="cth: 1.5L Turbo / Electric" value={form.engine} onChange={e => setForm(p => ({...p,engine:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Tenaga (HP)</label>
-                  <input className="form-control" placeholder="cth: 177 HP" value={form.power} onChange={e => setForm(p => ({...p,power:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Jangkauan EV (km)</label>
-                  <input className="form-control" placeholder="cth: 480 km (kosongkan jika bukan EV)" value={form.range} onChange={e => setForm(p => ({...p,range:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Harga</label>
-                  <input className="form-control" placeholder="cth: Rp 489 Juta" value={form.price} onChange={e => setForm(p => ({...p,price:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select className="form-control" value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}>
-                    <option value="active">Aktif (Tampil di Website)</option>
-                    <option value="draft">Draft (Tersembunyi)</option>
-                  </select>
-                </div>
-                <div className="form-group" style={{display:'flex',flexDirection:'column',gap:12,paddingTop:24}}>
-                  <div className="toggle-wrap">
-                    <label className="toggle">
-                      <input type="checkbox" checked={form.is_new} onChange={e => setForm(p => ({...p,is_new:e.target.checked}))} />
-                      <span className="toggle-slider"></span>
-                    </label>
-                    <span className="toggle-label">Tandai sebagai "NEW"</span>
-                  </div>
-                  <div className="toggle-wrap">
-                    <label className="toggle">
-                      <input type="checkbox" checked={form.is_featured} onChange={e => setForm(p => ({...p,is_featured:e.target.checked}))} />
-                      <span className="toggle-slider"></span>
-                    </label>
-                    <span className="toggle-label">Tampilkan di Hero</span>
-                  </div>
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Deskripsi Singkat</label>
-                  <textarea className="form-control" placeholder="Deskripsi singkat mobil (1-2 kalimat)" value={form.description} onChange={e => setForm(p => ({...p,description:e.target.value}))} style={{minHeight:80}} />
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Foto Mobil</label>
-                  <div className="form-hint" style={{marginBottom:8}}>Ukuran ideal: 1200×800px, rasio 3:2. Bisa URL atau upload file gambar.</div>
-                  <ImageInput value={form.image} onChange={v => setForm(p => ({...p,image:v}))} type="car" />
-                </div>
+        <div className="testi-grid">
+          {TESTIMONIALS.map((t, i) => (
+            <div key={i} className="testi-card">
+              <div className="testi-stars">{'★'.repeat(t.stars)}</div>
+              <div className="testi-text">"{t.text}"</div>
+              <div className="testi-author">
+                <div className="testi-avatar">{t.initials}</div>
+                <div><div className="testi-name">{t.name}</div><div className="testi-car">Pemilik {t.car}</div></div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowForm(false)}>Batal</button>
-              <button className="btn btn-primary" onClick={handleSave}>💾 Simpan Model</button>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
-
-      {deleteItem && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-body">
-              <div className="delete-confirm">
-                <div className="delete-confirm-icon">🗑️</div>
-                <h3>Hapus Model?</h3>
-                <p>Anda yakin ingin menghapus <strong>{deleteItem.name}</strong>?</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setDeleteItem(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={handleDelete}>🗑️ Ya, Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }
 
-// ==============================
-// ARTICLES PAGE
-// ==============================
-function ArticlesPage({ articles, setArticles }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [deleteItem, setDeleteItem] = useState(null);
-  const [search, setSearch] = useState('');
-  const [contentTab, setContentTab] = useState('visual');
-  const contentRef = useRef(null);
-  const emptyForm = { title:'', category:'Review', category_color:'#3B82F6', excerpt:'', image:'', date: new Date().toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}), read_time:'5 menit baca', status:'published', content:'' };
-  const [form, setForm] = useState(emptyForm);
-
-  const CATEGORIES = [
-    { label: 'Review', color: '#3B82F6' },
-    { label: 'Perbandingan', color: '#10B981' },
-    { label: 'Panduan', color: '#F59E0B' },
-    { label: 'Opini', color: '#8B5CF6' },
-    { label: 'Berita', color: '#EC4899' },
-    { label: 'Tips', color: '#06B6D4' },
-  ];
-
-  const filtered = articles.filter(a =>
-    a.title.toLowerCase().includes(search.toLowerCase()) ||
-    a.category.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const openAdd = () => { setForm(emptyForm); setEditItem(null); setShowForm(true); setTimeout(() => { if(contentRef.current) contentRef.current.innerHTML = ''; }, 100); };
-  const openEdit = (a) => { setForm({...a}); setEditItem(a); setShowForm(true); setTimeout(() => { if(contentRef.current) contentRef.current.innerHTML = a.content||''; }, 100); };
-
-  const handleSave = async () => {
-    if (!form.title) { toast.error('Judul artikel wajib diisi!'); return; }
-    const content = contentRef.current ? contentRef.current.innerHTML : form.content;
-    const finalForm = {...form, content};
-    try {
-      if (editItem) {
-        await sb.from('articles').update(finalForm).eq('id', editItem.id);
-        setArticles(p => p.map(a => a.id === editItem.id ? {...finalForm, id:editItem.id} : a));
-      } else {
-        const { data } = await sb.from('articles').insert([finalForm]).select();
-        setArticles(p => [...p, data ? data[0] : {...finalForm, id: Date.now()}]);
-      }
-      toast.success(editItem ? 'Artikel diupdate!' : 'Artikel ditambahkan!');
-      setShowForm(false);
-    } catch(e) {
-      if (editItem) setArticles(p => p.map(a => a.id === editItem.id ? {...finalForm, id:editItem.id} : a));
-      else setArticles(p => [...p, {...finalForm, id: Date.now()}]);
-      toast.success('Artikel disimpan (lokal)!');
-      setShowForm(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try { await sb.from('articles').delete().eq('id', deleteItem.id); } catch(e) {}
-    setArticles(p => p.filter(a => a.id !== deleteItem.id));
-    toast.success('Artikel dihapus!'); setDeleteItem(null);
-  };
-
-  const execCmd = (cmd, val = null) => {
-    contentRef.current?.focus();
-    document.execCommand(cmd, false, val);
-  };
-  const insertImg = () => {
-    const url = prompt('URL Gambar:');
-    if (url) execCmd('insertImage', url);
-  };
-  const insertLink = () => {
-    const url = prompt('URL Link:');
-    if (url) execCmd('createLink', url);
-  };
-
+// --- CTA ---
+function CTASection() {
   return (
-    <div>
-      <div className="toolbar">
-        <div className="search-bar">
-          <span>🔍</span>
-          <input placeholder="Cari artikel..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div style={{marginLeft:'auto'}}>
-          <button className="btn btn-primary" onClick={openAdd}>+ Tulis Artikel</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Foto</th><th>Judul</th><th>Kategori</th><th>Tanggal</th><th>Status</th><th>Aksi</th>
-            </tr></thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={6}><div className="table-empty"><div className="table-empty-icon">📝</div><p>Belum ada artikel</p></div></td></tr>
-              )}
-              {filtered.map(a => (
-                <tr key={a.id}>
-                  <td><img src={a.image} alt={a.title} className="td-img" onError={e => e.target.style.opacity=0.3} /></td>
-                  <td style={{maxWidth:280}}><strong style={{display:'block',marginBottom:2}}>{a.title}</strong><span style={{fontSize:'0.78rem',color:'#64748B'}}>{a.excerpt?.slice(0,60)}...</span></td>
-                  <td><span className="status" style={{background:a.category_color+'20',color:a.category_color}}>{a.category}</span></td>
-                  <td style={{whiteSpace:'nowrap'}}>{a.date}</td>
-                  <td><span className={`status ${a.status==='published'?'status-active':'status-draft'}`}>{a.status==='published'?'● Published':'● Draft'}</span></td>
-                  <td>
-                    <div style={{display:'flex',gap:6}}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(a)}>✏️ Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => setDeleteItem(a)}>🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <section className="cta-section">
+      <div className="container">
+        <h2>Siap Menemukan Mobil Impian Anda?</h2>
+        <p>Konsultasikan kebutuhan Anda dengan tim ahli kami. Gratis, cepat, dan tanpa tekanan!</p>
+        <div className="cta-actions">
+          <a href={waLink('Halo AutoCar! Saya ingin konsultasi dan test drive. Kapan bisa dijadwalkan?')} target="_blank" className="btn btn-white btn-lg">
+            💬 Chat WhatsApp Sekarang
+          </a>
+          <a href="tel:+6287710208822" className="btn btn-ghost btn-lg">📞 Hubungi Kami</a>
         </div>
       </div>
+    </section>
+  );
+}
 
-      {showForm && (
-        <div className="modal-overlay">
-          <div className="modal modal-lg">
-            <div className="modal-header">
-              <h2>{editItem ? '✏️ Edit Artikel' : '📝 Tulis Artikel Baru'}</h2>
-              <button className="close-btn" onClick={() => setShowForm(false)}>✕</button>
+// --- FOOTER ---
+function Footer({ onNavClick }) {
+  return (
+    <footer>
+      <div className="container">
+        <div className="footer-grid">
+          <div className="footer-brand">
+            <div className="nav-logo" style={{marginBottom:16}}>
+              <div className="nav-logo-icon">AC</div>
+              <span style={{fontFamily:'var(--font-display)',fontSize:'1.4rem',fontWeight:800,color:'white'}}>AutoCar</span>
             </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Judul Artikel <span className="required">*</span></label>
-                <input className="form-control" placeholder="Judul artikel yang menarik untuk SEO..." value={form.title} onChange={e => setForm(p => ({...p,title:e.target.value}))} />
-              </div>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label className="form-label">Kategori</label>
-                  <select className="form-control" value={form.category} onChange={e => {
-                    const cat = CATEGORIES.find(c => c.label === e.target.value);
-                    setForm(p => ({...p, category: e.target.value, category_color: cat?.color || '#3B82F6'}));
-                  }}>
-                    {CATEGORIES.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select className="form-control" value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}>
-                    <option value="published">Published (Tampil)</option>
-                    <option value="draft">Draft (Tersembunyi)</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Tanggal</label>
-                  <input className="form-control" placeholder="28 Mei 2025" value={form.date} onChange={e => setForm(p => ({...p,date:e.target.value}))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Estimasi Baca</label>
-                  <input className="form-control" placeholder="5 menit baca" value={form.read_time} onChange={e => setForm(p => ({...p,read_time:e.target.value}))} />
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Foto Utama Artikel</label>
-                  <ImageInput value={form.image} onChange={v => setForm(p => ({...p,image:v}))} type="car" />
-                </div>
-                <div className="form-group form-full">
-                  <label className="form-label">Ringkasan / Excerpt</label>
-                  <textarea className="form-control" placeholder="Ringkasan singkat artikel untuk preview di halaman blog..." value={form.excerpt} onChange={e => setForm(p => ({...p,excerpt:e.target.value}))} style={{minHeight:72}} />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Konten Artikel (Teks + Gambar)</label>
-                <div className="editor-tabs">
-                  <div className={`editor-tab ${contentTab==='visual'?'active':''}`} onClick={() => setContentTab('visual')}>✏️ Visual Editor</div>
-                  <div className={`editor-tab ${contentTab==='html'?'active':''}`} onClick={() => { setContentTab('html'); if(form.content) { /* sync */ }}}>{'</>'} HTML</div>
-                </div>
-                {contentTab === 'visual' ? (
-                  <div className="rich-editor">
-                    <div className="rich-toolbar">
-                      {[['bold','B'],['italic','I'],['underline','U']].map(([c,l]) => (
-                        <button key={c} type="button" className="rich-toolbar-btn" onClick={() => execCmd(c)} style={{fontStyle:c==='italic'?'italic':'',textDecoration:c==='underline'?'underline':''}}>{l}</button>
-                      ))}
-                      <span style={{width:1,background:'#E2E8F0',margin:'0 4px'}}></span>
-                      <button type="button" className="rich-toolbar-btn" onClick={() => execCmd('formatBlock','h1')}>H1</button>
-                      <button type="button" className="rich-toolbar-btn" onClick={() => execCmd('formatBlock','h2')}>H2</button>
-                      <button type="button" className="rich-toolbar-btn" onClick={() => execCmd('formatBlock','p')}>P</button>
-                      <span style={{width:1,background:'#E2E8F0',margin:'0 4px'}}></span>
-                      <button type="button" className="rich-toolbar-btn" onClick={() => execCmd('insertUnorderedList')}>• List</button>
-                      <button type="button" className="rich-toolbar-btn" onClick={insertImg}>🖼️</button>
-                      <button type="button" className="rich-toolbar-btn" onClick={insertLink}>🔗</button>
-                      <span style={{width:1,background:'#E2E8F0',margin:'0 4px'}}></span>
-                      <button type="button" className="rich-toolbar-btn" style={{color:'#EF4444'}} onClick={() => execCmd('removeFormat')}>✕</button>
-                    </div>
-                    <div ref={contentRef} className="rich-content" contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{__html: form.content || ''}} />
-                  </div>
-                ) : (
-                  <textarea className="html-editor" value={form.content} onChange={e => setForm(p => ({...p,content:e.target.value}))} placeholder="<h1>Judul</h1><p>Isi artikel...</p><img src='url' />" />
-                )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowForm(false)}>Batal</button>
-              <button className="btn btn-success" onClick={() => { setForm(p=>({...p,status:'draft'})); setTimeout(handleSave,50); }}>Simpan Draft</button>
-              <button className="btn btn-primary" onClick={handleSave}>🚀 Publish Artikel</button>
+            <p>One stop shopping mobil terpercaya di Indonesia. Kami menghadirkan brand-brand terbaik dunia dengan layanan prima dan harga transparan.</p>
+            <div className="footer-contact mt-4">
+              <div className="footer-contact-item">📍 <span>Jakarta, Indonesia</span></div>
+              <div className="footer-contact-item">📱 <strong>0877-1020-8822</strong></div>
+              <div className="footer-contact-item">💬 <a href={waLink('Halo AutoCar!')} target="_blank" style={{color:'#00D4AA'}}>WhatsApp Kami</a></div>
             </div>
           </div>
-        </div>
-      )}
-
-      {deleteItem && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-body">
-              <div className="delete-confirm">
-                <div className="delete-confirm-icon">🗑️</div>
-                <h3>Hapus Artikel?</h3>
-                <p>Anda yakin menghapus <strong>"{deleteItem.title?.slice(0,40)}..."</strong>?</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setDeleteItem(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={handleDelete}>🗑️ Ya, Hapus</button>
-            </div>
+          <div>
+            <div className="footer-title">Brand</div>
+            <ul className="footer-links">
+              <li><a href="#" onClick={() => onNavClick('brands')}>Geely Indonesia</a></li>
+              <li><a href="#" onClick={() => onNavClick('brands')}>BYD Indonesia</a></li>
+              <li><a href="#" style={{color:'rgba(255,255,255,0.3)'}}>Coming Soon...</a></li>
+            </ul>
+          </div>
+          <div>
+            <div className="footer-title">Layanan</div>
+            <ul className="footer-links">
+              <li><a href="#">Beli Mobil Baru</a></li>
+              <li><a href="#">Kredit Kendaraan</a></li>
+              <li><a href="#">Test Drive</a></li>
+              <li><a href="#">Servis & Bengkel</a></li>
+              <li><a href="#">Tukar Tambah</a></li>
+            </ul>
+          </div>
+          <div>
+            <div className="footer-title">Info</div>
+            <ul className="footer-links">
+              <li><a href="#" onClick={() => onNavClick('blog')}>Blog & Artikel</a></li>
+              <li><a href="#">Promo Terkini</a></li>
+              <li><a href="#">Tentang Kami</a></li>
+              <li><a href="#">Karir</a></li>
+              <li><a href="#">Kebijakan Privasi</a></li>
+            </ul>
           </div>
         </div>
-      )}
+        <div className="footer-bottom">
+          <p>© 2025 AutoCar Indonesia. Hak cipta dilindungi. | WA: 087710208822</p>
+          <div className="footer-social">
+            <a href={waLink('Halo AutoCar!')} target="_blank" className="social-icon">💬</a>
+            <div className="social-icon">📘</div>
+            <div className="social-icon">📸</div>
+            <div className="social-icon">🎥</div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// --- CAR MODAL ---
+function CarModal({ model, onClose }) {
+  if (!model) return null;
+  const brandLogo = DUMMY_BRANDS.find(b => b.name === model.brand_name)?.logo;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-brand">{model.brand_name} · {model.type}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <img src={model.image} alt={model.name} className="modal-img" onError={e => e.target.src='https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80'} />
+          <div className="modal-title">{model.name}</div>
+          <div className="modal-price">{model.price}</div>
+          <div className="modal-desc">{model.description}</div>
+          <div className="modal-specs-grid">
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.engine}</div><div className="modal-spec-label">Mesin</div></div>
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.power}</div><div className="modal-spec-label">Tenaga</div></div>
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.range || '—'}</div><div className="modal-spec-label">Jangkauan EV</div></div>
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.fuel}</div><div className="modal-spec-label">Bahan Bakar</div></div>
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.brand_name}</div><div className="modal-spec-label">Brand</div></div>
+            <div className="modal-spec-item"><div className="modal-spec-value">{model.type}</div><div className="modal-spec-label">Tipe</div></div>
+          </div>
+          <div className="modal-actions">
+            <a href={waLink(`Halo AutoCar! Saya tertarik dengan ${model.name} seharga ${model.price}. Bisa minta info lengkap dan jadwal test drive?`)} target="_blank" className="btn btn-primary" style={{flex:1,justifyContent:'center'}}>
+              💬 Tanya via WhatsApp
+            </a>
+            <button className="btn btn-outline" onClick={onClose}>Tutup</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- BLOG MODAL ---
+function BlogModal({ article, onClose }) {
+  if (!article) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:780}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="blog-tag" style={{background:`${article.category_color}20`,color:article.category_color}}>{article.category}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body blog-modal-content">
+          <div style={{fontSize:'0.8rem',color:'#9CA3AF',marginBottom:8}}>{article.date} · {article.read_time}</div>
+          <div dangerouslySetInnerHTML={{__html: article.content}} />
+          <div style={{marginTop:32,padding:24,background:'#F0F9FF',borderRadius:16,textAlign:'center'}}>
+            <p style={{fontWeight:700,marginBottom:12}}>Tertarik? Hubungi kami sekarang!</p>
+            <a href={waLink(`Halo AutoCar! Saya baru membaca artikel "${article.title}" dan ingin tahu lebih lanjut.`)} target="_blank" className="btn btn-primary">💬 Tanya via WhatsApp</a>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ==============================
-// MEDIA GALLERY (tersimpan di Supabase → tampil di menu Galeri frontend)
+// MAIN APP
 // ==============================
-function MediaPage() {
-  const [photos, setPhotos] = useState([]);
+function App() {
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [deleteItem, setDeleteItem] = useState(null);
-  const [newPhoto, setNewPhoto] = useState({ url:'', label:'' });
+  const [activePage, setActivePage] = useState('home');
+  const [brands, setBrands] = useState([]);
+  const [models, setModels] = useState([]);
+  const [articles, setArticles] = useState([]);
+  const [gallery, setGallery] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [selectedBrand, setSelectedBrand] = useState(null);
+  const [toast, setToast] = useState(null);
 
-  const DEFAULT_PHOTOS = [
-    { id:1, url:'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=400&q=80', label:'Geely Emgrand' },
-    { id:2, url:'https://images.unsplash.com/photo-1493238792000-8113da705763?w=400&q=80', label:'Geely Coolray' },
-    { id:3, url:'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=400&q=80', label:'BYD Atto 3' },
-  ];
-
-  // Load galeri dari Supabase
   useEffect(() => {
-    const load = async () => {
+    const init = async () => {
       try {
-        const { data, error } = await sb.from('gallery').select('*').order('created_at', { ascending: false });
-        if (error) throw error;
-        setPhotos(data?.length ? data : DEFAULT_PHOTOS);
-      } catch(e) {
-        setPhotos(DEFAULT_PHOTOS);
-        toast.warning('Mode offline — galeri tersimpan lokal saja');
+        if (supabase) {
+          const [{ data: b }, { data: m }, { data: a }, { data: g }] = await Promise.all([
+            supabase.from('brands').select('*').order('name'),
+            supabase.from('models').select('*').order('brand_name'),
+            supabase.from('articles').select('*').order('created_at', { ascending: false }),
+            supabase.from('gallery').select('*').order('created_at', { ascending: false }),
+          ]);
+          if (b?.length) setBrands(b);
+          if (m?.length) setModels(m);
+          if (a?.length) setArticles(a);
+          if (g?.length) setGallery(g);
+        }
+      } catch (e) {
+        // Use dummy data
       }
-      setLoading(false);
+      setTimeout(() => setLoading(false), 1200);
     };
-    load();
+    init();
   }, []);
 
-  const handleAdd = async () => {
-    if (!newPhoto.url) { toast.error('URL/file foto wajib!'); return; }
-    const record = { url: newPhoto.url, label: newPhoto.label || 'Foto AutoCar' };
-    try {
-      const { data, error } = await sb.from('gallery').insert([record]).select();
-      if (error) throw error;
-      setPhotos(p => [data[0], ...p]);
-      toast.success('Foto tersimpan ke Supabase & tampil di Galeri website!');
-    } catch(e) {
-      setPhotos(p => [{...record, id: Date.now()}, ...p]);
-      toast.warning('Foto disimpan lokal (Supabase belum terhubung)');
-    }
-    setNewPhoto({ url:'', label:'' }); setShowAdd(false);
+  const scrollToSection = (id) => {
+    setActivePage(id);
+    setSelectedBrand(null); // keluar dari brand page jika sedang di sana
+    setTimeout(() => {
+      if (id === 'home') { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
   };
 
-  const handleDelete = async () => {
-    try {
-      const { error } = await sb.from('gallery').delete().eq('id', deleteItem.id);
-      if (error) throw error;
-      toast.success('Foto dihapus dari Supabase!');
-    } catch(e) {
-      toast.warning('Foto dihapus lokal saja');
-    }
-    setPhotos(p => p.filter(x => x.id !== deleteItem.id));
-    setDeleteItem(null);
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
-  if (loading) return <div style={{padding:48,textAlign:'center',color:'#64748B'}}>Memuat galeri dari Supabase...</div>;
+  // Klik brand → buka halaman khusus brand tersebut
+  const handleBrandClick = (brand) => {
+    setSelectedBrand(brand);
+    setActivePage('brands');
+  };
+
+  const featuredModel = (models.length ? models : DUMMY_MODELS).find(m => m.is_featured) || DUMMY_MODELS[0];
+  const allModels = models.length ? models : DUMMY_MODELS;
+
+  if (loading) return <LoadingScreen visible={true} />;
 
   return (
     <div>
-      <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Tambah Foto</button>
-        <div style={{marginLeft:'auto',fontSize:'0.82rem',color:'#64748B'}}>🗄️ {photos.length} foto · tersimpan di tabel <code>gallery</code> Supabase · otomatis tampil di menu Galeri website</div>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:16}}>
-        {photos.map(p => (
-          <div key={p.id} className="card" style={{overflow:'hidden',position:'relative'}}>
-            <img src={p.url} alt={p.label} style={{width:'100%',height:150,objectFit:'cover',display:'block'}} onError={e => e.target.style.opacity=0.3} />
-            <div style={{padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontSize:'0.8rem',fontWeight:600,color:'#334155'}}>{p.label}</span>
-              <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeleteItem(p)}>🗑️</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {showAdd && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-header"><h2>🖼️ Tambah Foto ke Galeri</h2><button className="close-btn" onClick={() => setShowAdd(false)}>✕</button></div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Foto (URL atau Upload)</label>
-                <ImageInput value={newPhoto.url} onChange={v => setNewPhoto(p => ({...p,url:v}))} type="car" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Label/Nama Foto</label>
-                <input className="form-control" placeholder="cth: BYD Atto 3 - Eksterior" value={newPhoto.label} onChange={e => setNewPhoto(p => ({...p,label:e.target.value}))} />
-              </div>
-              <div style={{padding:'10px 14px',background:'#EEF4FF',borderRadius:8,fontSize:'0.78rem',color:'#1D4ED8'}}>
-                💡 Foto akan otomatis muncul di menu <strong>Galeri</strong> halaman utama website.
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowAdd(false)}>Batal</button>
-              <button className="btn btn-primary" onClick={handleAdd}>💾 Simpan ke Supabase</button>
-            </div>
-          </div>
-        </div>
+      <Navbar onNavClick={scrollToSection} activePage={activePage} />
+
+      {selectedBrand ? (
+        /* ===== HALAMAN KHUSUS BRAND ===== */
+        <BrandPage
+          brand={selectedBrand}
+          models={allModels}
+          onBack={() => { setSelectedBrand(null); setActivePage('home'); window.scrollTo({top:0}); }}
+          onModelClick={setSelectedModel}
+        />
+      ) : (
+        /* ===== HOMEPAGE ===== */
+        <>
+          <Hero onExplore={scrollToSection} featuredModel={featuredModel} />
+          <TechStrip />
+          <BrandsSection brands={brands} onBrandClick={handleBrandClick} />
+          <ModelsSection models={models} brands={brands} selectedBrand={null} onModelClick={setSelectedModel} />
+          <CarouselSection models={models} />
+          <GallerySection gallery={gallery} />
+          <BlogSection articles={articles} onArticleClick={setSelectedArticle} />
+          <WhySection />
+          <TestimonialsSection />
+          <CTASection />
+        </>
       )}
-      {deleteItem && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm">
-            <div className="modal-body">
-              <div className="delete-confirm">
-                <div className="delete-confirm-icon">🗑️</div>
-                <h3>Hapus Foto?</h3>
-                <p>Foto <strong>{deleteItem.label}</strong> akan dihapus dari galeri website juga.</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setDeleteItem(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={handleDelete}>🗑️ Ya, Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
+
+      <Footer onNavClick={scrollToSection} />
+
+      {selectedModel && <CarModal model={selectedModel} onClose={() => setSelectedModel(null)} />}
+      {selectedArticle && <BlogModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />}
+
+      {toast && <div className={`toast toast-${toast.type}`}>{toast.type === 'success' ? '✅' : '❌'} {toast.msg}</div>}
+
+      <a href={waLink('Halo AutoCar! Saya ingin konsultasi pembelian mobil.')} target="_blank" className="wa-float">
+        <div className="wa-float-pulse"></div>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.998 0C5.374 0 0 5.373 0 11.997c0 2.116.554 4.101 1.524 5.83L.07 23.404a.75.75 0 00.921.921l5.583-1.461A11.944 11.944 0 0012 24c6.624 0 12-5.373 12-11.997C24 5.373 18.624 0 11.998 0zm0 21.999c-1.925 0-3.763-.516-5.345-1.415l-.38-.226-3.96 1.035 1.052-3.842-.248-.395C1.99 15.775 1.5 13.943 1.5 11.997 1.5 6.204 6.207 1.5 11.998 1.5c5.79 0 10.5 4.704 10.5 10.497 0 5.793-4.71 10.502-10.5 10.502z"/></svg>
+      </a>
+
+      <button className="back-to-top" onClick={() => window.scrollTo({top:0,behavior:'smooth'})}>↑</button>
     </div>
   );
 }
 
-// ==============================
-// HTML EDITOR — terhubung GitHub API
-// Perubahan disimpan (commit) langsung ke repository GitHub,
-// GitHub Pages otomatis deploy ulang → SEMUA pengunjung melihat versi terbaru.
-// ==============================
-
-// Base64 encode/decode yang aman untuk karakter UTF-8 (huruf Indonesia, emoji, dll)
-const b64encode = (str) => btoa(unescape(encodeURIComponent(str)));
-const b64decode = (str) => decodeURIComponent(escape(atob(str)));
-
-function getGhConfig() {
-  try { return JSON.parse(localStorage.getItem('ac_github') || '{}'); } catch(e) { return {}; }
-}
-
-function HtmlEditorPage() {
-  const [gh, setGh] = useState(getGhConfig());
-  const [showConfig, setShowConfig] = useState(!getGhConfig().token);
-  const [file, setFile] = useState('index.html');
-  const [code, setCode] = useState('');
-  const [sha, setSha] = useState(null);
-  const [tab, setTab] = useState('code');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  const ghReady = gh.token && gh.owner && gh.repo;
-  const apiUrl = (path) => `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${path}?ref=${gh.branch || 'main'}`;
-  const headers = () => ({ 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' });
-
-  // Muat isi file ASLI dari repository GitHub
-  const loadFile = async (filename) => {
-    if (!ghReady) { toast.warning('Isi konfigurasi GitHub dulu di atas'); setShowConfig(true); return; }
-    setLoading(true); setCode(''); setSha(null);
-    try {
-      const res = await fetch(apiUrl(filename), { headers: headers() });
-      if (res.status === 404) { toast.error(`File ${filename} tidak ditemukan di repo ${gh.owner}/${gh.repo}`); setLoading(false); return; }
-      if (res.status === 401) { toast.error('Token GitHub salah / expired'); setLoading(false); return; }
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      setCode(b64decode(data.content.replace(/\s/g, '')));
-      setSha(data.sha);
-      setDirty(false);
-      toast.success(`${filename} dimuat dari GitHub`);
-    } catch(e) {
-      toast.error('Gagal memuat: ' + e.message);
-    }
-    setLoading(false);
-  };
-
-  // Simpan (commit) ke GitHub → otomatis deploy ke semua pengunjung
-  const saveFile = async () => {
-    if (!ghReady) { toast.warning('Isi konfigurasi GitHub dulu'); setShowConfig(true); return; }
-    if (!sha) { toast.error('Muat file dulu sebelum menyimpan'); return; }
-    setSaving(true);
-    try {
-      const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${file}`, {
-        method: 'PUT',
-        headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `Update ${file} via AutoCar Admin Panel`,
-          content: b64encode(code),
-          sha: sha,
-          branch: gh.branch || 'main',
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'HTTP ' + res.status);
-      }
-      const data = await res.json();
-      setSha(data.content.sha);
-      setDirty(false);
-      toast.success(`✅ ${file} ter-commit ke GitHub! Website live terupdate dalam ±1-2 menit untuk SEMUA pengunjung.`);
-    } catch(e) {
-      toast.error('Gagal menyimpan: ' + e.message);
-    }
-    setSaving(false);
-  };
-
-  const handleSaveConfig = () => {
-    if (!gh.token || !gh.owner || !gh.repo) { toast.error('Token, username, dan nama repo wajib diisi'); return; }
-    localStorage.setItem('ac_github', JSON.stringify(gh));
-    setShowConfig(false);
-    toast.success('Konfigurasi GitHub tersimpan!');
-  };
-
-  const handleFileChange = (f) => {
-    if (dirty && !confirm('Ada perubahan belum disimpan. Tetap ganti file?')) return;
-    setFile(f);
-    setCode(''); setSha(null); setDirty(false); setTab('code');
-  };
-
-  return (
-    <div>
-      {/* ===== KONFIGURASI GITHUB ===== */}
-      <div className="card" style={{marginBottom:20}}>
-        <div className="card-header" style={{cursor:'pointer'}} onClick={() => setShowConfig(!showConfig)}>
-          <div className="card-title">🔗 Koneksi GitHub {ghReady ? <span className="status status-active" style={{marginLeft:8}}>● Terhubung: {gh.owner}/{gh.repo}</span> : <span className="status status-draft" style={{marginLeft:8}}>● Belum dikonfigurasi</span>}</div>
-          <span style={{color:'#94A3B8'}}>{showConfig ? '▲' : '▼'}</span>
-        </div>
-        {showConfig && (
-          <div className="card-body">
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">Username GitHub <span className="required">*</span></label>
-                <input className="form-control" placeholder="cth: budisantoso" value={gh.owner||''} onChange={e => setGh(p => ({...p,owner:e.target.value.trim()}))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Nama Repository <span className="required">*</span></label>
-                <input className="form-control" placeholder="cth: autocar" value={gh.repo||''} onChange={e => setGh(p => ({...p,repo:e.target.value.trim()}))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Branch</label>
-                <input className="form-control" placeholder="main" value={gh.branch||'main'} onChange={e => setGh(p => ({...p,branch:e.target.value.trim()}))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Personal Access Token <span className="required">*</span></label>
-                <input className="form-control" type="password" placeholder="github_pat_xxxx / ghp_xxxx" value={gh.token||''} onChange={e => setGh(p => ({...p,token:e.target.value.trim()}))} />
-              </div>
-            </div>
-            <div style={{padding:'12px 16px',background:'#EEF4FF',borderRadius:8,fontSize:'0.8rem',color:'#1D4ED8',marginBottom:16,lineHeight:1.7}}>
-              💡 <strong>Cara buat token:</strong> GitHub → klik foto profil → <strong>Settings</strong> → <strong>Developer settings</strong> → <strong>Personal access tokens → Fine-grained tokens</strong> → <strong>Generate new token</strong> → pilih repository <code>{gh.repo||'autocar'}</code> → di Repository permissions, set <strong>Contents = Read and write</strong> → Generate. Salin token ke kolom di atas.
-              <br/>🔒 Token hanya tersimpan di browser ini (localStorage), tidak dikirim ke mana pun selain GitHub.
-            </div>
-            <button className="btn btn-primary" onClick={handleSaveConfig}>💾 Simpan Konfigurasi</button>
-          </div>
-        )}
-      </div>
-
-      {/* ===== EDITOR ===== */}
-      <div className="toolbar">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontSize:'0.82rem',color:'#64748B'}}>File:</span>
-          <select className="filter-select" value={file} onChange={e => handleFileChange(e.target.value)}>
-            <option value="index.html">index.html (Halaman Utama)</option>
-            <option value="app.js">app.js (React App)</option>
-            <option value="styles.css">styles.css (CSS)</option>
-            <option value="admin.html">admin.html (Panel Admin)</option>
-            <option value="admin.css">admin.css (CSS Admin)</option>
-            <option value="admin.js">admin.js (React Admin)</option>
-          </select>
-          <button className="btn btn-outline btn-sm" onClick={() => loadFile(file)} disabled={loading}>
-            {loading ? '⏳ Memuat...' : '📥 Muat dari GitHub'}
-          </button>
-        </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}}>
-          {dirty && <span style={{fontSize:'0.78rem',color:'#D97706',fontWeight:600}}>● Belum disimpan</span>}
-          <button className="btn btn-success" onClick={saveFile} disabled={saving || !sha}>
-            {saving ? '⏳ Menyimpan...' : '🚀 Simpan & Deploy ke GitHub'}
-          </button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="editor-tabs" style={{padding:'0 20px',borderBottom:'1px solid #E2E8F0'}}>
-          <div className={`editor-tab ${tab==='code'?'active':''}`} onClick={() => setTab('code')}>{'</>'} Kode — {file}</div>
-          {file.endsWith('.html') && (
-            <div className={`editor-tab ${tab==='preview'?'active':''}`} onClick={() => setTab('preview')}>👁️ Preview</div>
-          )}
-        </div>
-        <div style={{padding:0}}>
-          {tab === 'code' ? (
-            !sha && !code ? (
-              <div style={{minHeight:380,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:'#94A3B8'}}>
-                <div style={{fontSize:'2.5rem'}}>📂</div>
-                <p style={{fontSize:'0.9rem'}}>{loading ? 'Memuat file dari GitHub...' : 'Klik "📥 Muat dari GitHub" untuk membuka isi file asli'}</p>
-              </div>
-            ) : (
-              <textarea key={file} className="html-editor" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} value={code} onChange={e => { setCode(e.target.value); setDirty(true); }} spellCheck={false} />
-            )
-          ) : (
-            <div className="html-preview" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} dangerouslySetInnerHTML={{__html: code}} />
-          )}
-        </div>
-      </div>
-
-      <div style={{marginTop:12,padding:'12px 16px',background:'#F0FDF4',borderRadius:8,border:'1px solid #BBF7D0',fontSize:'0.8rem',color:'#166534',lineHeight:1.7}}>
-        ✅ <strong>Cara kerja:</strong> "Muat dari GitHub" mengambil isi file asli dari repository Anda. Setelah diedit, klik <strong>"Simpan & Deploy"</strong> — file langsung di-commit ke GitHub dan GitHub Pages otomatis build ulang. Dalam ±1-2 menit, <strong>semua pengunjung dari perangkat mana pun</strong> akan melihat versi terbaru. (Tips: refresh dengan Ctrl+Shift+R untuk melewati cache browser.)
-      </div>
-    </div>
-  );
-}
-
-// ==============================
-// SETTINGS PAGE
-// ==============================
-function SettingsPage() {
-  const [settings, setSettings] = useState({
-    site_name: 'AutoCar Indonesia', site_desc: 'One Stop Car Shopping Terpercaya',
-    wa_number: '087710208822', address: 'Jakarta, Indonesia',
-    supabase_url: SUPABASE_URL, supabase_key: SUPABASE_KEY,
-    seo_keywords: 'beli mobil, Geely Indonesia, BYD Indonesia, dealer mobil',
-    google_analytics: '',
-  });
-  const handleSave = () => toast.success('Pengaturan berhasil disimpan!');
-  return (
-    <div>
-      <div className="card" style={{marginBottom:20}}>
-        <div className="card-header"><div className="card-title">⚙️ Pengaturan Website</div></div>
-        <div className="card-body">
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label">Nama Website</label>
-              <input className="form-control" value={settings.site_name} onChange={e => setSettings(p=>({...p,site_name:e.target.value}))} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Nomor WhatsApp</label>
-              <input className="form-control" placeholder="087710208822" value={settings.wa_number} onChange={e => setSettings(p=>({...p,wa_number:e.target.value}))} />
-            </div>
-            <div className="form-group form-full">
-              <label className="form-label">Deskripsi Website (SEO)</label>
-              <textarea className="form-control" value={settings.site_desc} onChange={e => setSettings(p=>({...p,site_desc:e.target.value}))} style={{minHeight:72}} />
-            </div>
-            <div className="form-group form-full">
-              <label className="form-label">Kata Kunci SEO</label>
-              <input className="form-control" value={settings.seo_keywords} onChange={e => setSettings(p=>({...p,seo_keywords:e.target.value}))} />
-              <div className="form-hint">Pisahkan dengan koma. Penting untuk SEO Google.</div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Alamat</label>
-              <input className="form-control" value={settings.address} onChange={e => setSettings(p=>({...p,address:e.target.value}))} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Google Analytics ID</label>
-              <input className="form-control" placeholder="G-XXXXXXXXXX" value={settings.google_analytics} onChange={e => setSettings(p=>({...p,google_analytics:e.target.value}))} />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="card" style={{marginBottom:20}}>
-        <div className="card-header"><div className="card-title">🗄️ Konfigurasi Supabase</div></div>
-        <div className="card-body">
-          <div className="form-group">
-            <label className="form-label">Supabase Project URL</label>
-            <input className="form-control" placeholder="https://xxxx.supabase.co" value={settings.supabase_url} onChange={e => setSettings(p=>({...p,supabase_url:e.target.value}))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Supabase Anon Key</label>
-            <input className="form-control" type="password" placeholder="eyJhbG..." value={settings.supabase_key} onChange={e => setSettings(p=>({...p,supabase_key:e.target.value}))} />
-            <div className="form-hint">Gunakan Anon/Public key. Jangan gunakan Service Role key di frontend!</div>
-          </div>
-          <div style={{padding:'12px 16px',background:'#EEF4FF',borderRadius:8,fontSize:'0.8rem',color:'#1D4ED8',marginBottom:8}}>
-            💡 <strong>Setup Supabase:</strong> Buat tabel <code>brands</code>, <code>models</code>, dan <code>articles</code> di Supabase. Lihat file <code>supabase-setup.sql</code> untuk skema lengkap.
-          </div>
-        </div>
-      </div>
-      <button className="btn btn-primary" onClick={handleSave}>💾 Simpan Semua Pengaturan</button>
-    </div>
-  );
-}
-
-// ==============================
-// MAIN ADMIN APP
-// ==============================
-function AdminApp() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ac_admin'));
-  const [page, setPage] = useState('dashboard');
-  const [brands, setBrands] = useState(INIT_BRANDS);
-  const [models, setModels] = useState(INIT_MODELS);
-  const [articles, setArticles] = useState(INIT_ARTICLES);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [{ data: b }, { data: m }, { data: a }] = await Promise.all([
-          sb.from('brands').select('*'),
-          sb.from('models').select('*'),
-          sb.from('articles').select('*'),
-        ]);
-        if (b?.length) setBrands(b);
-        if (m?.length) setModels(m);
-        if (a?.length) setArticles(a);
-      } catch(e) {}
-    };
-    if (isLoggedIn) load();
-  }, [isLoggedIn]);
-
-  const handleLogout = () => { localStorage.removeItem('ac_admin'); setIsLoggedIn(false); };
-
-  if (!isLoggedIn) return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
-
-  const renderPage = () => {
-    switch(page) {
-      case 'dashboard': return <Dashboard brands={brands} models={models} articles={articles} setPage={setPage} />;
-      case 'brands': return <BrandsPage brands={brands} setBrands={setBrands} />;
-      case 'models': return <ModelsPage models={models} setModels={setModels} brands={brands} />;
-      case 'articles': return <ArticlesPage articles={articles} setArticles={setArticles} />;
-      case 'media': return <MediaPage />;
-      case 'htmleditor': return <HtmlEditorPage />;
-      case 'settings': return <SettingsPage />;
-      default: return <Dashboard brands={brands} models={models} articles={articles} setPage={setPage} />;
-    }
-  };
-
-  return (
-    <div className="admin-layout">
-      <Sidebar active={page} setActive={setPage} onLogout={handleLogout} />
-      <div className="main-content">
-        <Topbar page={page} />
-        <div className="page-content">{renderPage()}</div>
-      </div>
-      <ToastContainer />
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('admin-root')).render(<AdminApp />);
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
