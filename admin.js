@@ -6,7 +6,19 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ---- SUPABASE ----
 const SUPABASE_URL = 'https://uoikdkfgwrhtdgbwuvyy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_mtdnERcp4a0-2jXdPRgSbQ_yZhJw9As';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Init aman: jika gagal, admin tetap jalan mode lokal
+let sb = null;
+try {
+  if (window.supabase && SUPABASE_URL.includes('.supabase.co') && !SUPABASE_URL.includes('YOUR_PROJECT')) {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+} catch(e) { console.warn('Supabase tidak terhubung:', e); }
+// Fallback dummy client agar pemanggilan sb.from(...) tidak crash saat offline
+if (!sb) {
+  const fail = async () => { throw new Error('Supabase belum dikonfigurasi'); };
+  const chain = { select: () => chain, insert: () => chain, update: () => chain, delete: () => chain, eq: () => chain, order: () => chain, then: (res, rej) => fail().then(res, rej) };
+  sb = { from: () => chain };
+}
 
 // ---- AUTH ----
 const ADMIN_USER = 'admin@autocar.id';
@@ -1017,116 +1029,135 @@ function MediaPage() {
 }
 
 // ==============================
-// HTML EDITOR (konten berganti sesuai file yang dipilih)
+// HTML EDITOR — terhubung GitHub API
+// Perubahan disimpan (commit) langsung ke repository GitHub,
+// GitHub Pages otomatis deploy ulang → SEMUA pengunjung melihat versi terbaru.
 // ==============================
-const FILE_TEMPLATES = {
-  'index.html': `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutoCar Indonesia – One Stop Car Shopping</title>
-  <meta name="description" content="AutoCar Indonesia – Temukan mobil impian Anda dari berbagai brand terbaik dunia." />
-  <meta name="keywords" content="beli mobil, Geely Indonesia, BYD Indonesia, mobil listrik" />
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="text/babel" src="app.js"></script>
-</body>
-</html>`,
-  'app.js': `// ==============================
-// AUTOCAR - MAIN APP (React)
-// ==============================
-// File utama aplikasi React untuk halaman publik.
-// Berisi: Hero, Brand, Model, Carousel, Galeri, Blog, dll.
 
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_KEY = 'YOUR_ANON_KEY';
+// Base64 encode/decode yang aman untuk karakter UTF-8 (huruf Indonesia, emoji, dll)
+const b64encode = (str) => btoa(unescape(encodeURIComponent(str)));
+const b64decode = (str) => decodeURIComponent(escape(atob(str)));
 
-// WhatsApp tujuan
-const WA_NUMBER = '6287710208822';
-
-// ... (edit konfigurasi di atas, lalu upload ulang ke hosting)
-// Untuk edit komponen lengkap, buka file app.js asli di repository GitHub Anda.`,
-  'styles.css': `/* ===========================
-   AUTOCAR - GLOBAL STYLES
-   =========================== */
-:root {
-  --primary: #0066FF;       /* Warna utama - biru */
-  --primary-dark: #0047B3;
-  --accent: #00D4AA;        /* Warna aksen - teal */
-  --dark: #0A0E1A;          /* Background gelap */
-  --white: #FFFFFF;
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
+function getGhConfig() {
+  try { return JSON.parse(localStorage.getItem('ac_github') || '{}'); } catch(e) { return {}; }
 }
 
-/* Ganti warna tema website dengan mengubah variabel di atas */
-/* Untuk CSS lengkap, buka file styles.css asli di repository GitHub Anda. */`,
-  'admin.html': `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8" />
-  <title>AutoCar Admin Panel</title>
-  <meta name="robots" content="noindex, nofollow" />
-  <link rel="stylesheet" href="admin.css" />
-</head>
-<body>
-  <div id="admin-root"></div>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="text/babel" src="admin.js"></script>
-</body>
-</html>`,
-};
-
 function HtmlEditorPage() {
+  const [gh, setGh] = useState(getGhConfig());
+  const [showConfig, setShowConfig] = useState(!getGhConfig().token);
   const [file, setFile] = useState('index.html');
-  // Simpan konten per-file, sehingga edit tidak hilang saat ganti file
-  const [contents, setContents] = useState(() => {
-    const saved = localStorage.getItem('ac_html_editor');
-    return saved ? JSON.parse(saved) : {...FILE_TEMPLATES};
-  });
+  const [code, setCode] = useState('');
+  const [sha, setSha] = useState(null);
   const [tab, setTab] = useState('code');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  const code = contents[file] ?? FILE_TEMPLATES[file] ?? '';
+  const ghReady = gh.token && gh.owner && gh.repo;
+  const apiUrl = (path) => `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${path}?ref=${gh.branch || 'main'}`;
+  const headers = () => ({ 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' });
 
-  const handleFileChange = (newFile) => {
-    setFile(newFile);
-    setTab('code');
-  };
-
-  const handleCodeChange = (val) => {
-    setContents(p => ({...p, [file]: val}));
-  };
-
-  const handleSave = () => {
-    localStorage.setItem('ac_html_editor', JSON.stringify(contents));
-    toast.success(`File ${file} berhasil disimpan!`);
-  };
-
-  const handleReset = () => {
-    setContents(p => ({...p, [file]: FILE_TEMPLATES[file]}));
-    toast.warning(`${file} dikembalikan ke template awal`);
-  };
-
-  const handleFormat = () => {
+  // Muat isi file ASLI dari repository GitHub
+  const loadFile = async (filename) => {
+    if (!ghReady) { toast.warning('Isi konfigurasi GitHub dulu di atas'); setShowConfig(true); return; }
+    setLoading(true); setCode(''); setSha(null);
     try {
-      const lines = code.split('\n').map(l => l.trimEnd());
-      handleCodeChange(lines.join('\n'));
-      toast.success('HTML diformat!');
-    } catch(e) { toast.error('Format gagal'); }
+      const res = await fetch(apiUrl(filename), { headers: headers() });
+      if (res.status === 404) { toast.error(`File ${filename} tidak ditemukan di repo ${gh.owner}/${gh.repo}`); setLoading(false); return; }
+      if (res.status === 401) { toast.error('Token GitHub salah / expired'); setLoading(false); return; }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      setCode(b64decode(data.content.replace(/\s/g, '')));
+      setSha(data.sha);
+      setDirty(false);
+      toast.success(`${filename} dimuat dari GitHub`);
+    } catch(e) {
+      toast.error('Gagal memuat: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // Simpan (commit) ke GitHub → otomatis deploy ke semua pengunjung
+  const saveFile = async () => {
+    if (!ghReady) { toast.warning('Isi konfigurasi GitHub dulu'); setShowConfig(true); return; }
+    if (!sha) { toast.error('Muat file dulu sebelum menyimpan'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${file}`, {
+        method: 'PUT',
+        headers: { ...headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Update ${file} via AutoCar Admin Panel`,
+          content: b64encode(code),
+          sha: sha,
+          branch: gh.branch || 'main',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'HTTP ' + res.status);
+      }
+      const data = await res.json();
+      setSha(data.content.sha);
+      setDirty(false);
+      toast.success(`✅ ${file} ter-commit ke GitHub! Website live terupdate dalam ±1-2 menit untuk SEMUA pengunjung.`);
+    } catch(e) {
+      toast.error('Gagal menyimpan: ' + e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleSaveConfig = () => {
+    if (!gh.token || !gh.owner || !gh.repo) { toast.error('Token, username, dan nama repo wajib diisi'); return; }
+    localStorage.setItem('ac_github', JSON.stringify(gh));
+    setShowConfig(false);
+    toast.success('Konfigurasi GitHub tersimpan!');
+  };
+
+  const handleFileChange = (f) => {
+    if (dirty && !confirm('Ada perubahan belum disimpan. Tetap ganti file?')) return;
+    setFile(f);
+    setCode(''); setSha(null); setDirty(false); setTab('code');
   };
 
   return (
     <div>
+      {/* ===== KONFIGURASI GITHUB ===== */}
+      <div className="card" style={{marginBottom:20}}>
+        <div className="card-header" style={{cursor:'pointer'}} onClick={() => setShowConfig(!showConfig)}>
+          <div className="card-title">🔗 Koneksi GitHub {ghReady ? <span className="status status-active" style={{marginLeft:8}}>● Terhubung: {gh.owner}/{gh.repo}</span> : <span className="status status-draft" style={{marginLeft:8}}>● Belum dikonfigurasi</span>}</div>
+          <span style={{color:'#94A3B8'}}>{showConfig ? '▲' : '▼'}</span>
+        </div>
+        {showConfig && (
+          <div className="card-body">
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Username GitHub <span className="required">*</span></label>
+                <input className="form-control" placeholder="cth: budisantoso" value={gh.owner||''} onChange={e => setGh(p => ({...p,owner:e.target.value.trim()}))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Nama Repository <span className="required">*</span></label>
+                <input className="form-control" placeholder="cth: autocar" value={gh.repo||''} onChange={e => setGh(p => ({...p,repo:e.target.value.trim()}))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Branch</label>
+                <input className="form-control" placeholder="main" value={gh.branch||'main'} onChange={e => setGh(p => ({...p,branch:e.target.value.trim()}))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Personal Access Token <span className="required">*</span></label>
+                <input className="form-control" type="password" placeholder="github_pat_xxxx / ghp_xxxx" value={gh.token||''} onChange={e => setGh(p => ({...p,token:e.target.value.trim()}))} />
+              </div>
+            </div>
+            <div style={{padding:'12px 16px',background:'#EEF4FF',borderRadius:8,fontSize:'0.8rem',color:'#1D4ED8',marginBottom:16,lineHeight:1.7}}>
+              💡 <strong>Cara buat token:</strong> GitHub → klik foto profil → <strong>Settings</strong> → <strong>Developer settings</strong> → <strong>Personal access tokens → Fine-grained tokens</strong> → <strong>Generate new token</strong> → pilih repository <code>{gh.repo||'autocar'}</code> → di Repository permissions, set <strong>Contents = Read and write</strong> → Generate. Salin token ke kolom di atas.
+              <br/>🔒 Token hanya tersimpan di browser ini (localStorage), tidak dikirim ke mana pun selain GitHub.
+            </div>
+            <button className="btn btn-primary" onClick={handleSaveConfig}>💾 Simpan Konfigurasi</button>
+          </div>
+        )}
+      </div>
+
+      {/* ===== EDITOR ===== */}
       <div className="toolbar">
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:'0.82rem',color:'#64748B'}}>File:</span>
@@ -1135,14 +1166,21 @@ function HtmlEditorPage() {
             <option value="app.js">app.js (React App)</option>
             <option value="styles.css">styles.css (CSS)</option>
             <option value="admin.html">admin.html (Panel Admin)</option>
+            <option value="admin.css">admin.css (CSS Admin)</option>
+            <option value="admin.js">admin.js (React Admin)</option>
           </select>
+          <button className="btn btn-outline btn-sm" onClick={() => loadFile(file)} disabled={loading}>
+            {loading ? '⏳ Memuat...' : '📥 Muat dari GitHub'}
+          </button>
         </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          <button className="btn btn-ghost btn-sm" onClick={handleReset}>↺ Reset</button>
-          <button className="btn btn-ghost btn-sm" onClick={handleFormat}>🔧 Format</button>
-          <button className="btn btn-success" onClick={handleSave}>💾 Simpan {file}</button>
+        <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}}>
+          {dirty && <span style={{fontSize:'0.78rem',color:'#D97706',fontWeight:600}}>● Belum disimpan</span>}
+          <button className="btn btn-success" onClick={saveFile} disabled={saving || !sha}>
+            {saving ? '⏳ Menyimpan...' : '🚀 Simpan & Deploy ke GitHub'}
+          </button>
         </div>
       </div>
+
       <div className="card">
         <div className="editor-tabs" style={{padding:'0 20px',borderBottom:'1px solid #E2E8F0'}}>
           <div className={`editor-tab ${tab==='code'?'active':''}`} onClick={() => setTab('code')}>{'</>'} Kode — {file}</div>
@@ -1152,14 +1190,22 @@ function HtmlEditorPage() {
         </div>
         <div style={{padding:0}}>
           {tab === 'code' ? (
-            <textarea key={file} className="html-editor" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} value={code} onChange={e => handleCodeChange(e.target.value)} spellCheck={false} />
+            !sha && !code ? (
+              <div style={{minHeight:380,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:'#94A3B8'}}>
+                <div style={{fontSize:'2.5rem'}}>📂</div>
+                <p style={{fontSize:'0.9rem'}}>{loading ? 'Memuat file dari GitHub...' : 'Klik "📥 Muat dari GitHub" untuk membuka isi file asli'}</p>
+              </div>
+            ) : (
+              <textarea key={file} className="html-editor" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} value={code} onChange={e => { setCode(e.target.value); setDirty(true); }} spellCheck={false} />
+            )
           ) : (
             <div className="html-preview" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} dangerouslySetInnerHTML={{__html: code}} />
           )}
         </div>
       </div>
-      <div style={{marginTop:12,padding:'12px 16px',background:'#FFFBEB',borderRadius:8,border:'1px solid #FDE68A',fontSize:'0.8rem',color:'#92400E'}}>
-        ⚠️ <strong>Perhatian:</strong> Editor ini menyimpan ke browser (localStorage). Untuk menerapkan perubahan ke website live, salin kode lalu update file di repository GitHub Anda — GitHub Pages akan otomatis deploy ulang.
+
+      <div style={{marginTop:12,padding:'12px 16px',background:'#F0FDF4',borderRadius:8,border:'1px solid #BBF7D0',fontSize:'0.8rem',color:'#166534',lineHeight:1.7}}>
+        ✅ <strong>Cara kerja:</strong> "Muat dari GitHub" mengambil isi file asli dari repository Anda. Setelah diedit, klik <strong>"Simpan & Deploy"</strong> — file langsung di-commit ke GitHub dan GitHub Pages otomatis build ulang. Dalam ±1-2 menit, <strong>semua pengunjung dari perangkat mana pun</strong> akan melihat versi terbaru. (Tips: refresh dengan Ctrl+Shift+R untuk melewati cache browser.)
       </div>
     </div>
   );
