@@ -894,30 +894,71 @@ function ArticlesPage({ articles, setArticles }) {
 }
 
 // ==============================
-// MEDIA GALLERY
+// MEDIA GALLERY (tersimpan di Supabase → tampil di menu Galeri frontend)
 // ==============================
 function MediaPage() {
-  const [photos, setPhotos] = useState([
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [newPhoto, setNewPhoto] = useState({ url:'', label:'' });
+
+  const DEFAULT_PHOTOS = [
     { id:1, url:'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=400&q=80', label:'Geely Emgrand' },
     { id:2, url:'https://images.unsplash.com/photo-1493238792000-8113da705763?w=400&q=80', label:'Geely Coolray' },
     { id:3, url:'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=400&q=80', label:'BYD Atto 3' },
-    { id:4, url:'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=400&q=80', label:'BYD Dolphin' },
-    { id:5, url:'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=400&q=80', label:'BYD Seal' },
-    { id:6, url:'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=400&q=80', label:'Geely Okavango' },
-  ]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newPhoto, setNewPhoto] = useState({ url:'', label:'' });
-  const handleAdd = () => {
+  ];
+
+  // Load galeri dari Supabase
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data, error } = await sb.from('gallery').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        setPhotos(data?.length ? data : DEFAULT_PHOTOS);
+      } catch(e) {
+        setPhotos(DEFAULT_PHOTOS);
+        toast.warning('Mode offline — galeri tersimpan lokal saja');
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const handleAdd = async () => {
     if (!newPhoto.url) { toast.error('URL/file foto wajib!'); return; }
-    setPhotos(p => [...p, {...newPhoto, id: Date.now()}]);
+    const record = { url: newPhoto.url, label: newPhoto.label || 'Foto AutoCar' };
+    try {
+      const { data, error } = await sb.from('gallery').insert([record]).select();
+      if (error) throw error;
+      setPhotos(p => [data[0], ...p]);
+      toast.success('Foto tersimpan ke Supabase & tampil di Galeri website!');
+    } catch(e) {
+      setPhotos(p => [{...record, id: Date.now()}, ...p]);
+      toast.warning('Foto disimpan lokal (Supabase belum terhubung)');
+    }
     setNewPhoto({ url:'', label:'' }); setShowAdd(false);
-    toast.success('Foto ditambahkan!');
   };
+
+  const handleDelete = async () => {
+    try {
+      const { error } = await sb.from('gallery').delete().eq('id', deleteItem.id);
+      if (error) throw error;
+      toast.success('Foto dihapus dari Supabase!');
+    } catch(e) {
+      toast.warning('Foto dihapus lokal saja');
+    }
+    setPhotos(p => p.filter(x => x.id !== deleteItem.id));
+    setDeleteItem(null);
+  };
+
+  if (loading) return <div style={{padding:48,textAlign:'center',color:'#64748B'}}>Memuat galeri dari Supabase...</div>;
+
   return (
     <div>
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Tambah Foto</button>
-        <div style={{marginLeft:'auto',fontSize:'0.82rem',color:'#64748B'}}>{photos.length} foto tersimpan</div>
+        <div style={{marginLeft:'auto',fontSize:'0.82rem',color:'#64748B'}}>🗄️ {photos.length} foto · tersimpan di tabel <code>gallery</code> Supabase · otomatis tampil di menu Galeri website</div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:16}}>
         {photos.map(p => (
@@ -925,7 +966,7 @@ function MediaPage() {
             <img src={p.url} alt={p.label} style={{width:'100%',height:150,objectFit:'cover',display:'block'}} onError={e => e.target.style.opacity=0.3} />
             <div style={{padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <span style={{fontSize:'0.8rem',fontWeight:600,color:'#334155'}}>{p.label}</span>
-              <button className="btn btn-danger btn-sm btn-icon" onClick={() => { setPhotos(pr => pr.filter(x => x.id !== p.id)); toast.success('Foto dihapus!'); }}>🗑️</button>
+              <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeleteItem(p)}>🗑️</button>
             </div>
           </div>
         ))}
@@ -933,7 +974,7 @@ function MediaPage() {
       {showAdd && (
         <div className="modal-overlay">
           <div className="modal modal-sm">
-            <div className="modal-header"><h2>🖼️ Tambah Foto</h2><button className="close-btn" onClick={() => setShowAdd(false)}>✕</button></div>
+            <div className="modal-header"><h2>🖼️ Tambah Foto ke Galeri</h2><button className="close-btn" onClick={() => setShowAdd(false)}>✕</button></div>
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Foto (URL atau Upload)</label>
@@ -943,10 +984,30 @@ function MediaPage() {
                 <label className="form-label">Label/Nama Foto</label>
                 <input className="form-control" placeholder="cth: BYD Atto 3 - Eksterior" value={newPhoto.label} onChange={e => setNewPhoto(p => ({...p,label:e.target.value}))} />
               </div>
+              <div style={{padding:'10px 14px',background:'#EEF4FF',borderRadius:8,fontSize:'0.78rem',color:'#1D4ED8'}}>
+                💡 Foto akan otomatis muncul di menu <strong>Galeri</strong> halaman utama website.
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowAdd(false)}>Batal</button>
-              <button className="btn btn-primary" onClick={handleAdd}>💾 Simpan Foto</button>
+              <button className="btn btn-primary" onClick={handleAdd}>💾 Simpan ke Supabase</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteItem && (
+        <div className="modal-overlay">
+          <div className="modal modal-sm">
+            <div className="modal-body">
+              <div className="delete-confirm">
+                <div className="delete-confirm-icon">🗑️</div>
+                <h3>Hapus Foto?</h3>
+                <p>Foto <strong>{deleteItem.label}</strong> akan dihapus dari galeri website juga.</p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setDeleteItem(null)}>Batal</button>
+              <button className="btn btn-danger" onClick={handleDelete}>🗑️ Ya, Hapus</button>
             </div>
           </div>
         </div>
@@ -956,42 +1017,120 @@ function MediaPage() {
 }
 
 // ==============================
-// HTML EDITOR
+// HTML EDITOR (konten berganti sesuai file yang dipilih)
 // ==============================
-function HtmlEditorPage() {
-  const [file, setFile] = useState('index.html');
-  const [code, setCode] = useState('');
-  const [tab, setTab] = useState('code');
-  const SAMPLE_HTML = `<!DOCTYPE html>
+const FILE_TEMPLATES = {
+  'index.html': `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <title>AutoCar Indonesia</title>
-  <!-- Edit meta SEO di sini -->
-  <meta name="description" content="AutoCar Indonesia – One Stop Car Shopping" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoCar Indonesia – One Stop Car Shopping</title>
+  <meta name="description" content="AutoCar Indonesia – Temukan mobil impian Anda dari berbagai brand terbaik dunia." />
+  <meta name="keywords" content="beli mobil, Geely Indonesia, BYD Indonesia, mobil listrik" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Edit konten website di sini -->
-  <!-- File ini dikelola melalui Admin Panel -->
   <div id="root"></div>
-  <script src="app.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script type="text/babel" src="app.js"></script>
 </body>
-</html>`;
-  useEffect(() => { setCode(SAMPLE_HTML); }, []);
-  const handleSave = () => { toast.success(`File ${file} berhasil disimpan!`); };
+</html>`,
+  'app.js': `// ==============================
+// AUTOCAR - MAIN APP (React)
+// ==============================
+// File utama aplikasi React untuk halaman publik.
+// Berisi: Hero, Brand, Model, Carousel, Galeri, Blog, dll.
+
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_KEY = 'YOUR_ANON_KEY';
+
+// WhatsApp tujuan
+const WA_NUMBER = '6287710208822';
+
+// ... (edit konfigurasi di atas, lalu upload ulang ke hosting)
+// Untuk edit komponen lengkap, buka file app.js asli di repository GitHub Anda.`,
+  'styles.css': `/* ===========================
+   AUTOCAR - GLOBAL STYLES
+   =========================== */
+:root {
+  --primary: #0066FF;       /* Warna utama - biru */
+  --primary-dark: #0047B3;
+  --accent: #00D4AA;        /* Warna aksen - teal */
+  --dark: #0A0E1A;          /* Background gelap */
+  --white: #FFFFFF;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* Ganti warna tema website dengan mengubah variabel di atas */
+/* Untuk CSS lengkap, buka file styles.css asli di repository GitHub Anda. */`,
+  'admin.html': `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>AutoCar Admin Panel</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <div id="admin-root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script type="text/babel" src="admin.js"></script>
+</body>
+</html>`,
+};
+
+function HtmlEditorPage() {
+  const [file, setFile] = useState('index.html');
+  // Simpan konten per-file, sehingga edit tidak hilang saat ganti file
+  const [contents, setContents] = useState(() => {
+    const saved = localStorage.getItem('ac_html_editor');
+    return saved ? JSON.parse(saved) : {...FILE_TEMPLATES};
+  });
+  const [tab, setTab] = useState('code');
+
+  const code = contents[file] ?? FILE_TEMPLATES[file] ?? '';
+
+  const handleFileChange = (newFile) => {
+    setFile(newFile);
+    setTab('code');
+  };
+
+  const handleCodeChange = (val) => {
+    setContents(p => ({...p, [file]: val}));
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('ac_html_editor', JSON.stringify(contents));
+    toast.success(`File ${file} berhasil disimpan!`);
+  };
+
+  const handleReset = () => {
+    setContents(p => ({...p, [file]: FILE_TEMPLATES[file]}));
+    toast.warning(`${file} dikembalikan ke template awal`);
+  };
+
   const handleFormat = () => {
     try {
-      const lines = code.split('\n').map(l => l.trim()).filter(l => l);
-      setCode(lines.join('\n'));
+      const lines = code.split('\n').map(l => l.trimEnd());
+      handleCodeChange(lines.join('\n'));
       toast.success('HTML diformat!');
     } catch(e) { toast.error('Format gagal'); }
   };
+
   return (
     <div>
       <div className="toolbar">
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:'0.82rem',color:'#64748B'}}>File:</span>
-          <select className="filter-select" value={file} onChange={e => setFile(e.target.value)}>
+          <select className="filter-select" value={file} onChange={e => handleFileChange(e.target.value)}>
             <option value="index.html">index.html (Halaman Utama)</option>
             <option value="app.js">app.js (React App)</option>
             <option value="styles.css">styles.css (CSS)</option>
@@ -999,25 +1138,28 @@ function HtmlEditorPage() {
           </select>
         </div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          <button className="btn btn-ghost btn-sm" onClick={handleReset}>↺ Reset</button>
           <button className="btn btn-ghost btn-sm" onClick={handleFormat}>🔧 Format</button>
           <button className="btn btn-success" onClick={handleSave}>💾 Simpan {file}</button>
         </div>
       </div>
       <div className="card">
         <div className="editor-tabs" style={{padding:'0 20px',borderBottom:'1px solid #E2E8F0'}}>
-          <div className={`editor-tab ${tab==='code'?'active':''}`} onClick={() => setTab('code')}>{'</>'} Kode</div>
-          <div className={`editor-tab ${tab==='preview'?'active':''}`} onClick={() => setTab('preview')}>👁️ Preview</div>
+          <div className={`editor-tab ${tab==='code'?'active':''}`} onClick={() => setTab('code')}>{'</>'} Kode — {file}</div>
+          {file.endsWith('.html') && (
+            <div className={`editor-tab ${tab==='preview'?'active':''}`} onClick={() => setTab('preview')}>👁️ Preview</div>
+          )}
         </div>
         <div style={{padding:0}}>
           {tab === 'code' ? (
-            <textarea className="html-editor" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} value={code} onChange={e => setCode(e.target.value)} spellCheck={false} />
+            <textarea key={file} className="html-editor" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} value={code} onChange={e => handleCodeChange(e.target.value)} spellCheck={false} />
           ) : (
             <div className="html-preview" style={{minHeight:480,borderRadius:'0 0 12px 12px'}} dangerouslySetInnerHTML={{__html: code}} />
           )}
         </div>
       </div>
       <div style={{marginTop:12,padding:'12px 16px',background:'#FFFBEB',borderRadius:8,border:'1px solid #FDE68A',fontSize:'0.8rem',color:'#92400E'}}>
-        ⚠️ <strong>Perhatian:</strong> Perubahan pada HTML Editor bersifat lokal. Untuk deploy, upload file ke hosting Anda. Selalu backup sebelum mengedit.
+        ⚠️ <strong>Perhatian:</strong> Editor ini menyimpan ke browser (localStorage). Untuk menerapkan perubahan ke website live, salin kode lalu update file di repository GitHub Anda — GitHub Pages akan otomatis deploy ulang.
       </div>
     </div>
   );
