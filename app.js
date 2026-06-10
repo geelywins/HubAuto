@@ -8,6 +8,7 @@ const { useState, useEffect, useRef, useCallback } = React;
 const SUPABASE_URL = 'https://uoikdkfgwrhtdgbwuvyy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_mtdnERcp4a0-2jXdPRgSbQ_yZhJw9As';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ---- DUMMY DATA (fallback) ----
 const DUMMY_BRANDS = [
@@ -29,6 +30,14 @@ const DUMMY_ARTICLES = [
   { id: 4, title: 'BYD Seal 2025: Sedan Listrik Premium yang Menantang Tesla di Indonesia', category: 'Review', category_color: '#3B82F6', excerpt: 'BYD Seal dengan jangkauan 570 km dan performa 313 HP hadir sebagai alternatif premium untuk sedan listrik di pasar Indonesia.', image: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=80', date: '8 Mei 2025', read_time: '6 menit baca', content: '<h1>BYD Seal: Sedan Listrik Premium</h1><p>Review lengkap BYD Seal...</p>' },
   { id: 5, title: '7 Alasan Kenapa Mobil Listrik Adalah Masa Depan Transportasi Indonesia', category: 'Opini', category_color: '#8B5CF6', excerpt: 'Dari efisiensi biaya, ramah lingkungan, hingga infrastruktur yang terus berkembang — inilah mengapa Anda harus mulai mempertimbangkan kendaraan listrik.', image: 'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', date: '1 Mei 2025', read_time: '7 menit baca', content: '<h1>Masa Depan Kendaraan Listrik</h1><p>Artikel opini tentang kendaraan listrik...</p>' },
   { id: 6, title: 'Geely Okavango 2025: MPV Premium dengan Harga Terjangkau untuk Keluarga Indonesia', category: 'Review', category_color: '#3B82F6', excerpt: 'Geely Okavango menawarkan kenyamanan setara premium dengan harga yang masih terjangkau — pilihan MPV terbaik untuk keluarga besar.', image: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80', date: '25 Apr 2025', read_time: '5 menit baca', content: '<h1>Geely Okavango 2025 Review</h1><p>Review lengkap Geely Okavango...</p>' },
+];
+const DUMMY_GALLERY = [
+  { id:1, url:'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80', label:'Geely Emgrand' },
+  { id:2, url:'https://images.unsplash.com/photo-1493238792000-8113da705763?w=600&q=80', label:'Geely Coolray' },
+  { id:3, url:'https://images.unsplash.com/photo-1610186591551-45f540e38f6b?w=600&q=80', label:'BYD Atto 3' },
+  { id:4, url:'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&q=80', label:'BYD Dolphin' },
+  { id:5, url:'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=80', label:'BYD Seal' },
+  { id:6, url:'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80', label:'Geely Okavango' },
 ];
 const TESTIMONIALS = [
   { name: 'Budi Santoso', car: 'BYD Atto 3', text: 'Pengalaman beli mobil di AutoCar sangat menyenangkan! Tim sangat profesional dan membantu dari awal hingga akhir. BYD Atto 3 saya sudah 6 bulan, sangat puas!', initials: 'BS', stars: 5 },
@@ -81,6 +90,7 @@ function Navbar({ onNavClick, activePage }) {
     { id: 'home', label: 'Beranda' },
     { id: 'brands', label: 'Brand' },
     { id: 'models', label: 'Model' },
+    { id: 'gallery', label: 'Galeri' },
     { id: 'blog', label: 'Blog' },
     { id: 'about', label: 'Tentang' },
   ];
@@ -405,6 +415,105 @@ function BlogSection({ articles, onArticleClick }) {
   );
 }
 
+// --- BRAND PAGE (Halaman khusus per-brand) ---
+function BrandPage({ brand, models, onBack, onModelClick }) {
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [brand]);
+  const brandModels = models.filter(m => m.brand_id == brand.id || m.brand_name === brand.name);
+  return (
+    <div style={{paddingTop:'var(--nav-h)'}}>
+      {/* Brand Hero Header */}
+      <section style={{background:'linear-gradient(135deg, #0A0E1A 0%, #1E2235 100%)',padding:'64px 0',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:'-30%',right:'-5%',width:500,height:500,background:'radial-gradient(circle, rgba(0,102,255,0.15) 0%, transparent 70%)',borderRadius:'50%'}}></div>
+        <div className="container" style={{position:'relative',zIndex:1}}>
+          <button onClick={onBack} className="btn btn-ghost btn-sm" style={{marginBottom:28}}>← Kembali ke Beranda</button>
+          <div style={{display:'flex',alignItems:'center',gap:28,flexWrap:'wrap'}}>
+            <div style={{width:110,height:110,background:'white',borderRadius:20,display:'flex',alignItems:'center',justifyContent:'center',padding:16,flexShrink:0,boxShadow:'0 10px 40px rgba(0,0,0,0.3)'}}>
+              <img src={brand.logo} alt={brand.name} style={{width:'100%',height:'100%',objectFit:'contain'}} onError={e => { e.target.outerHTML=`<span style="font-size:2.4rem;font-weight:900;color:#0066FF">${brand.name.slice(0,2)}</span>`; }} />
+            </div>
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+                <h1 style={{color:'white',fontSize:'clamp(2rem,4vw,3rem)'}}>{brand.name}</h1>
+                {brand.is_new && <span className="badge badge-new">NEW</span>}
+              </div>
+              <p style={{color:'rgba(255,255,255,0.6)',fontSize:'1rem'}}>🌍 {brand.country} · {brandModels.length} Model Tersedia di Indonesia</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Brand Models */}
+      <section className="section" style={{background:'var(--gray-6)'}}>
+        <div className="container">
+          <div className="section-header text-center">
+            <span className="badge badge-primary mb-4">Semua Model {brand.name}</span>
+            <h2>Lineup <span className="text-gradient">{brand.name}</span> Indonesia</h2>
+            <p>Pilih model {brand.name} yang sesuai dengan kebutuhan dan gaya hidup Anda</p>
+          </div>
+          {brandModels.length === 0 ? (
+            <div className="text-center" style={{padding:'48px 0',color:'#9CA3AF'}}>
+              <div style={{fontSize:'3rem',marginBottom:12}}>🚗</div>
+              <p>Model {brand.name} segera hadir. Hubungi kami untuk info lebih lanjut!</p>
+              <a href={waLink(`Halo AutoCar! Saya ingin info model ${brand.name} yang tersedia.`)} target="_blank" className="btn btn-primary" style={{marginTop:16}}>💬 Tanya via WhatsApp</a>
+            </div>
+          ) : (
+            <div className="models-grid">
+              {brandModels.map(m => <CarCard key={m.id} model={m} onClick={() => onModelClick(m)} />)}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Brand CTA */}
+      <section className="cta-section">
+        <div className="container">
+          <h2>Tertarik dengan {brand.name}?</h2>
+          <p>Jadwalkan test drive atau konsultasi gratis dengan tim ahli kami sekarang!</p>
+          <div className="cta-actions">
+            <a href={waLink(`Halo AutoCar! Saya tertarik dengan mobil ${brand.name}. Bisa jadwalkan test drive?`)} target="_blank" className="btn btn-white btn-lg">💬 Chat WhatsApp</a>
+            <a href="tel:+6287710208822" className="btn btn-ghost btn-lg">📞 Telepon Kami</a>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// --- GALLERY SECTION ---
+function GallerySection({ gallery }) {
+  const data = gallery.length ? gallery : DUMMY_GALLERY;
+  const [lightbox, setLightbox] = useState(null);
+  return (
+    <section id="gallery" className="section" style={{background:'white'}}>
+      <div className="container">
+        <div className="section-header text-center">
+          <span className="badge badge-accent mb-4">Galeri</span>
+          <h2>Galeri <span className="text-gradient">Foto</span></h2>
+          <p>Koleksi foto terbaru unit, showroom, dan momen serah terima pelanggan kami</p>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:20}}>
+          {data.map(g => (
+            <div key={g.id} onClick={() => setLightbox(g)} style={{position:'relative',borderRadius:16,overflow:'hidden',cursor:'pointer',height:220,border:'1px solid var(--border-light)'}}
+              onMouseEnter={e => e.currentTarget.querySelector('img').style.transform='scale(1.06)'}
+              onMouseLeave={e => e.currentTarget.querySelector('img').style.transform='scale(1)'}>
+              <img src={g.url} alt={g.label} style={{width:'100%',height:'100%',objectFit:'cover',transition:'0.5s'}} onError={e => e.target.src='https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?w=600&q=80'} />
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%)'}}></div>
+              <div style={{position:'absolute',bottom:14,left:16,color:'white',fontWeight:600,fontSize:'0.9rem'}}>{g.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {lightbox && (
+        <div className="modal-overlay" onClick={() => setLightbox(null)}>
+          <div style={{maxWidth:880,width:'100%'}} onClick={e => e.stopPropagation()}>
+            <img src={lightbox.url} alt={lightbox.label} style={{width:'100%',borderRadius:16,maxHeight:'80vh',objectFit:'contain'}} />
+            <div style={{textAlign:'center',color:'white',marginTop:12,fontWeight:600}}>{lightbox.label}</div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // --- WHY US ---
 function WhySection() {
   return (
@@ -605,22 +714,26 @@ function App() {
   const [brands, setBrands] = useState([]);
   const [models, setModels] = useState([]);
   const [articles, setArticles] = useState([]);
+  const [gallery, setGallery] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [selectedBrand, setSelectedBrand] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
     const init = async () => {
       try {
         // Try Supabase
-        const [{ data: b }, { data: m }, { data: a }] = await Promise.all([
+        const [{ data: b }, { data: m }, { data: a }, { data: g }] = await Promise.all([
           supabase.from('brands').select('*').order('name'),
           supabase.from('models').select('*').order('brand_name'),
           supabase.from('articles').select('*').order('created_at', { ascending: false }),
+          supabase.from('gallery').select('*').order('created_at', { ascending: false }),
         ]);
         if (b?.length) setBrands(b);
         if (m?.length) setModels(m);
         if (a?.length) setArticles(a);
+        if (g?.length) setGallery(g);
       } catch (e) {
         // Use dummy data
       }
@@ -631,8 +744,12 @@ function App() {
 
   const scrollToSection = (id) => {
     setActivePage(id);
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    setSelectedBrand(null); // keluar dari brand page jika sedang di sana
+    setTimeout(() => {
+      if (id === 'home') { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
   };
 
   const showToast = (msg, type = 'success') => {
@@ -640,15 +757,14 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Klik brand → buka halaman khusus brand tersebut
   const handleBrandClick = (brand) => {
-    setActivePage('models');
-    setTimeout(() => {
-      const el = document.getElementById('models');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    setSelectedBrand(brand);
+    setActivePage('brands');
   };
 
   const featuredModel = (models.length ? models : DUMMY_MODELS).find(m => m.is_featured) || DUMMY_MODELS[0];
+  const allModels = models.length ? models : DUMMY_MODELS;
 
   if (loading) return <LoadingScreen visible={true} />;
 
@@ -656,15 +772,30 @@ function App() {
     <div>
       <Navbar onNavClick={scrollToSection} activePage={activePage} />
 
-      <Hero onExplore={scrollToSection} featuredModel={featuredModel} />
-      <TechStrip />
-      <BrandsSection brands={brands} onBrandClick={handleBrandClick} />
-      <ModelsSection models={models} brands={brands} selectedBrand={null} onModelClick={setSelectedModel} />
-      <CarouselSection models={models} />
-      <BlogSection articles={articles} onArticleClick={setSelectedArticle} />
-      <WhySection />
-      <TestimonialsSection />
-      <CTASection />
+      {selectedBrand ? (
+        /* ===== HALAMAN KHUSUS BRAND ===== */
+        <BrandPage
+          brand={selectedBrand}
+          models={allModels}
+          onBack={() => { setSelectedBrand(null); setActivePage('home'); window.scrollTo({top:0}); }}
+          onModelClick={setSelectedModel}
+        />
+      ) : (
+        /* ===== HOMEPAGE ===== */
+        <>
+          <Hero onExplore={scrollToSection} featuredModel={featuredModel} />
+          <TechStrip />
+          <BrandsSection brands={brands} onBrandClick={handleBrandClick} />
+          <ModelsSection models={models} brands={brands} selectedBrand={null} onModelClick={setSelectedModel} />
+          <CarouselSection models={models} />
+          <GallerySection gallery={gallery} />
+          <BlogSection articles={articles} onArticleClick={setSelectedArticle} />
+          <WhySection />
+          <TestimonialsSection />
+          <CTASection />
+        </>
+      )}
+
       <Footer onNavClick={scrollToSection} />
 
       {selectedModel && <CarModal model={selectedModel} onClose={() => setSelectedModel(null)} />}
